@@ -1,0 +1,33 @@
+# Node / Cloud Functions
+functions/node_modules/
+functions/lib/
+functions/.env
+functions/*.log
+
+# Firebase
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Local secrets
+*.serviceAccount.json
+serviceAccountKey.json
+.env
+.env.*
+
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# App dependencies and local build output
+app/node_modules/
+app/dist/
+app/*.tsbuildinfo
+app/vite.config.js
+app/vite.config.d.ts
+build/
+
+# GitHub Pages output is committed intentionally (docs/)
+!docs/

@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="مراحل البكالوريا">
+  <rect width="512" height="512" rx="112" fill="#0f5a4e"/>
+  <path d="M120 360h88v-72h88v-72h88V144" fill="none" stroke="#f7f3ea" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="384" cy="144" r="34" fill="#d4a24c"/>
+  <path d="M120 392h272" fill="none" stroke="#d4a24c" stroke-width="24" stroke-linecap="round"/>
+</svg>

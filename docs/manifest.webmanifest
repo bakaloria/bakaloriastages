@@ -1,0 +1,20 @@
+{
+  "name": "مراحل البكالوريا",
+  "short_name": "مراحل",
+  "description": "مسابقة دراسية تراكمية للبكالوريا مع مراجعة متباعدة وإجابات نموذجية.",
+  "id": "/bakaloriastages/",
+  "start_url": "/bakaloriastages/",
+  "scope": "/bakaloriastages/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "dir": "rtl",
+  "lang": "ar",
+  "background_color": "#f7f3ea",
+  "theme_color": "#0f5a4e",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

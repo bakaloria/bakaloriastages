@@ -1,0 +1,109 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == 'admin';
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // The client may read its own profile; all writes go through Cloud Functions.
+    match /users/{uid} {
+      allow read: if isOwner(uid) || isAdmin();
+      allow write: if false;
+    }
+
+    // Username uniqueness is managed by the register callable only.
+    match /usernames/{username} {
+      allow read, write: if false;
+    }
+
+    // Catalogue data is visible to signed-in students. Admins edit it.
+    match /subjects/{subjectId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /units/{unitId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /lessons/{lessonId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // Questions and their answers are never read directly by students.
+    // The callables return only the question text and, after submission,
+    // the model answer.
+    match /questions/{questionId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /question_answers/{questionId} {
+      allow read, write: if false;
+    }
+
+    match /unit_totals/{unitTotalId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Per-student state. Reads are limited to the owner (or an admin);
+    // writes are performed by Cloud Functions with the Admin SDK.
+    match /enrollments/{enrollmentId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if false;
+    }
+
+    match /progress/{progressId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if false;
+    }
+
+    match /unit_progress/{unitProgressId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if false;
+    }
+
+    match /stage_attempts/{attemptId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if false;
+    }
+
+    match /final_exam_attempts/{attemptId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if false;
+    }
+
+    match /certificates/{certificateId} {
+      allow read: if isOwner(resource.data.userId) || isAdmin();
+      allow write: if false;
+    }
+
+    // Admin-editable settings. Defaults live in code, so missing documents
+    // are not a problem.
+    match /settings/{settingsId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /subject_settings/{subjectId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

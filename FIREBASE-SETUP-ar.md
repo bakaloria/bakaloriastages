@@ -4,7 +4,7 @@
 
 تم اختيار **Firebase** بدل Supabase.
 
-- Supabase schema الموجود في `supabase/schema.sql` يبقى كنسخة بديلة غير مستخدمة.
+- تم حذف ملفات Supabase القديمة من المشروع. لا يوجد backend بديل مفعّل.
 - التنفيذ الفعلي أصبح في:
   - `firebase.json`
   - `.firebaserc`
@@ -339,7 +339,7 @@ await signInWithEmailAndPassword(auth, email, password);
 - لإعادة تعيين كلمة المرور: أضف لاحقًا دالة إدارية أو رمز استعادة.
 - `getLeaderboard` يعتمد على `autoFirstCorrect` للأسئلة المصححة آليًا فقط، لأن أسئلة المقال والتقصير ذاتية.
 - الواجهة العربية PWA مبنية في `app/` وتُخرج إلى `docs/` للنشر على GitHub Pages.
-- إذا تقرر لاحقًا الرجوع إلى Supabase، ملف `supabase/schema.sql` موجود لكنه غير مفعّل.
+- لا يوجد Supabase في هذا المشروع؛ Firebase هو الـ backend الوحيد.
 
 ## ما تبقّى قبل الإطلاق
 

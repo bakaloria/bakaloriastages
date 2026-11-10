@@ -25,7 +25,6 @@ firestore.indexes.json
 firebase.json
 functions/scripts/set-admin.mjs
 functions/scripts/import-bank.mjs
-supabase/            مخطط بديل غير مفعّل
 tools/               محاكاة التغطية والمراحل
 ```
 

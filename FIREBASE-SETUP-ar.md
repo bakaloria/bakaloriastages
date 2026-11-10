@@ -36,12 +36,15 @@
    - لا نحتاج Email verification أو password reset بالبريد في MVP، لأن البريد صناعي.
    - من **Authentication → Settings → Authorized domains** أضف
      `bakaloria.github.io` بعد نشر GitHub Pages (مطلوب لبعض عمليات Auth وApp Check).
+     **تمت إضافته بالفعل** إلى جانب `localhost` ونطاقات المشروع.
 
 2. **Firestore Database**
    - الرابط المباشر: <https://console.firebase.google.com/project/bakaloriarace/firestore>
    - Create database.
    - اختر نفس region الذي ستستخدمه للـ Functions إن أمكن.
    - Production mode.
+   - **تم إنشاء القاعدة `(default)` في `europe-west9`، ونُشرت القواعد والفهارس.**
+   - توجد مادة تجريبية (`demo`) لاختبار المسار؛ احذفها بعد استيراد البنك الحقيقي.
 
 3. **Functions (اختياري)**
    - لا تحتاجها في وضع Spark المجاني.
@@ -59,7 +62,9 @@
      التصحيح في الواجهة في وضع Spark أو داخل الخادم في وضع Functions.
 
 5. **Hosting**
-   - غير مطلوب الآن. يمكن نشر الواجهة لاحقًا على GitHub Pages أو Firebase Hosting.
+   - الواجهة منشورة على GitHub Pages من فرع `main` ومجلد `docs`:
+     <https://bakaloria.github.io/bakaloriastages/>
+   - يمكن استخدام Firebase Hosting لاحقًا كمرآة إضافية، لكنه غير مطلوب الآن.
    - `firebase.json` الحالي لا يحتوي Hosting حتى لا يفشل النشر قبل وجود الواجهة.
 
 ## إعداد الويب (مطلوب قبل النشر)

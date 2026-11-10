@@ -15,7 +15,13 @@
 ## الرابط
 
 - GitHub: <https://github.com/bakaloria/bakaloriastages>
-- التطبيق بعد النشر: <https://bakaloria.github.io/bakaloriastages/>
+- التطبيق المباشر: <https://bakaloria.github.io/bakaloriastages/>
+- Firestore: مشروع `bakaloriarace`، قاعدة `(default)` في `europe-west9`.
+- النطاق `bakaloria.github.io` مضاف إلى Authorized domains في Firebase Auth.
+
+> يوجد حاليًا في Firestore مادة تجريبية باسم **«مادة تجريبية»** ومعرّفها `demo`
+> (6 أسئلة) لاختبار المسار الكامل. احذفها من Firestore Console بعد استيراد
+> بنك الأسئلة الحقيقي، أو أبقِها كمثال.
 
 ## البنية
 
@@ -164,6 +170,9 @@ git push origin main
 بعد ظهور رابط GitHub Pages، أضف `bakaloria.github.io` إلى
 **Firebase Console → Authentication → Settings → Authorized domains**.
 
+> تم تفعيل GitHub Pages وإضافة النطاق بالفعل. تبقى الخطوات أعلاه مرجعًا لإعادة
+> النشر من نسخة جديدة.
+
 > ملاحظة: لا تضع GitHub Token أو Service Account أو Private Key في المستودع. إعدادات Firebase Web عامة بطبيعتها، لكنها ليست بديلًا عن قواعد الأمان.
 
 ## حالة التنفيذ
@@ -176,11 +185,14 @@ git push origin main
 - [x] PWA: manifest وأيقونات وService Worker.
 - [x] وضع `firebaseConfig` الحقيقي في `app/public/firebase-config.js`.
 - [x] رفع الكود ونسخة `docs/` إلى `bakaloria/bakaloriastages`.
-- [ ] تفعيل GitHub Pages (Source: main / docs) — التوكن المتاح لا يملك صلاحية Pages.
-- [ ] إنشاء Firestore في مشروع `bakaloriarace` (Authentication مفعّل بالفعل).
-- [ ] نشر قواعد Firestore والفهارس (يتطلب تسجيل دخول Firebase CLI).
+- [x] تفعيل GitHub Pages (Source: main / docs) والرابط المباشر يعمل.
+- [x] إنشاء Firestore في مشروع `bakaloriarace` (Authentication مفعّل بالفعل).
+- [x] نشر قواعد Firestore والفهارس.
+- [x] اختبار قواعد الأمان والاستعلامات والفهارس (16/16 و13/13).
+- [x] إضافة `bakaloria.github.io` إلى Authorized domains.
+- [x] إدخال مادة تجريبية صغيرة (6 أسئلة) لاختبار المسار.
 - [ ] استيراد بنك الأسئلة الفعلي إلى Firestore.
-- [ ] اختبار مسار كامل بعد إنشاء Firestore.
+- [ ] اختبار المسار الكامل من واجهة المتصفح بحساب طالب حقيقي.
 - [ ] الترقية الاختيارية إلى Blaze ووضع Functions.
 - [ ] الامتحان النهائي ولوحة تحكم المشرف.
 

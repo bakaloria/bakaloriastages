@@ -61,6 +61,12 @@ export function Layout() {
 
   useEffect(() => {
     if (!profile) return;
+    // NotificationsPage marks the visible announcements as seen when it loads.
+    // Clearing the badge here avoids a stale count after that write.
+    if (location.pathname === "/notifications") {
+      setUnread(0);
+      return;
+    }
     let active = true;
     void fetchActiveAnnouncements()
       .then((rows) => {

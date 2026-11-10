@@ -528,11 +528,6 @@ async function register(input: RegisterInput) {
   }
   if (!BRANCHES.has(branch)) throw appError("BRANCH_INVALID", "invalid-argument");
 
-  const globalSettings = await fetchGlobalSettings();
-  if (!globalSettings.registrationsOpen) {
-    throw appError("REGISTRATIONS_CLOSED", "failed-precondition");
-  }
-
   const email = `${usernameLower}@${STUDENT_EMAIL_DOMAIN}`;
   let user: User;
   try {
@@ -547,6 +542,14 @@ async function register(input: RegisterInput) {
   }
 
   try {
+    // settings/global is readable only to signed-in users, so registration
+    // checks the switch after Firebase Auth has produced a token. If the
+    // switch is off, the temporary account is removed in the catch below.
+    const globalSettings = await fetchGlobalSettings();
+    if (!globalSettings.registrationsOpen) {
+      throw appError("REGISTRATIONS_CLOSED", "failed-precondition");
+    }
+
     await updateProfile(user, { displayName });
     const usernameRef = doc(firestore, "usernames", usernameLower);
     const userRef = doc(firestore, "users", user.uid);

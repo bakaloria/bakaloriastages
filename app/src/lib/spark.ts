@@ -22,6 +22,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { auth, db, STUDENT_EMAIL_DOMAIN } from "./firebase";
+import { fetchGlobalSettings, fetchSubjectSettings } from "./settings";
 import type {
   Branch,
   Certificate,
@@ -34,6 +35,7 @@ import type {
   StageResultResponse,
   StartStageResponse,
   SubjectProgress,
+  SubjectSettings,
   SubmitStageResponse,
 } from "./types";
 
@@ -46,16 +48,6 @@ import type {
  * app can switch to the hardened callable backend by setting
  * `backendMode: "functions"` in firebase-config.js.
  */
-
-interface SubjectSettings {
-  stageSize: number;
-  newPerStage: number;
-  reviewPerStage: number;
-  sessionStages: number;
-  intervalMinutes: number;
-  masteryThreshold: number;
-  finalExamRequired: boolean;
-}
 
 interface QuestionPublic {
   id: string;
@@ -106,16 +98,6 @@ interface UnitTotal {
   total: number;
   title: string;
 }
-
-const DEFAULT_SETTINGS: SubjectSettings = {
-  stageSize: 5,
-  newPerStage: 3,
-  reviewPerStage: 2,
-  sessionStages: 10,
-  intervalMinutes: 120,
-  masteryThreshold: 1,
-  finalExamRequired: false,
-};
 
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 const BRANCHES = new Set(["scientific", "literary"]);
@@ -187,8 +169,11 @@ function computeNextReviewAt(
   oldLevel: number,
   now: Timestamp,
   intervalMinutes: number,
+  wrongIntervalMinutes: number,
 ): Timestamp {
-  if (!isCorrect) return Timestamp.fromMillis(now.toMillis() + 10 * 60 * 1000);
+  if (!isCorrect) {
+    return Timestamp.fromMillis(now.toMillis() + Math.max(1, wrongIntervalMinutes) * 60 * 1000);
+  }
   const factor = [1, 3, 7, 14][Math.max(0, Math.min(3, Math.floor(oldLevel)))];
   const baseMs = Math.max(0, intervalMinutes) * 60 * 1000;
   return Timestamp.fromMillis(now.toMillis() + baseMs * factor);
@@ -299,21 +284,7 @@ function gradeAnswer(
 }
 
 async function getSettings(subjectId: string): Promise<SubjectSettings> {
-  const snap = await getDoc(doc(database(), "subject_settings", subjectId));
-  const data = snap.exists() ? (snap.data() as Partial<SubjectSettings>) : {};
-  const merged = { ...DEFAULT_SETTINGS, ...data };
-  return {
-    stageSize: Math.max(1, Math.min(10, Number(merged.stageSize) || DEFAULT_SETTINGS.stageSize)),
-    newPerStage: Math.max(0, Math.min(10, Number(merged.newPerStage) || 0)),
-    reviewPerStage: Math.max(0, Math.min(10, Number(merged.reviewPerStage) || 0)),
-    sessionStages: Math.max(
-      1,
-      Math.min(50, Number(merged.sessionStages) || DEFAULT_SETTINGS.sessionStages),
-    ),
-    intervalMinutes: Math.max(0, Math.min(7 * 24 * 60, Number(merged.intervalMinutes) || 0)),
-    masteryThreshold: Math.max(0, Math.min(1, Number(merged.masteryThreshold) || 0)),
-    finalExamRequired: Boolean(merged.finalExamRequired),
-  };
+  return fetchSubjectSettings(subjectId);
 }
 
 async function ensureEnrollment(
@@ -557,6 +528,11 @@ async function register(input: RegisterInput) {
   }
   if (!BRANCHES.has(branch)) throw appError("BRANCH_INVALID", "invalid-argument");
 
+  const globalSettings = await fetchGlobalSettings();
+  if (!globalSettings.registrationsOpen) {
+    throw appError("REGISTRATIONS_CLOSED", "failed-precondition");
+  }
+
   const email = `${usernameLower}@${STUDENT_EMAIL_DOMAIN}`;
   let user: User;
   try {
@@ -620,7 +596,10 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
   const uid = currentUser().uid;
   const firestore = database();
   const enrollment = await ensureEnrollment(uid, subjectId);
-  const settings = await getSettings(subjectId);
+  const [settings, globalSettings] = await Promise.all([
+    getSettings(subjectId),
+    fetchGlobalSettings(),
+  ]);
   const now = Timestamp.now();
 
   const lastSubmitted = await getDocs(
@@ -634,7 +613,8 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
     ),
   );
 
-  if (!lastSubmitted.empty && !lastSubmitted.docs[0].data().feedbackSeenAt) {
+  const lastSubmittedData = lastSubmitted.empty ? null : lastSubmitted.docs[0].data();
+  if (lastSubmittedData && !lastSubmittedData.feedbackSeenAt) {
     return { feedbackRequired: true, attemptId: lastSubmitted.docs[0].id };
   }
 
@@ -664,6 +644,21 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
     return buildStagePayload(attempt.id, attempt.data(), settings, true);
   }
 
+  const globalLocked = Boolean(globalSettings.stagesLocked || settings.stagesLocked);
+  if (globalLocked) {
+    return {
+      locked: true,
+      adminLocked: true,
+      nextAvailableAt: 0,
+      lockMessage:
+        globalSettings.lockMessage ||
+        settings.lockMessage ||
+        "أوقفت الإدارة فتح مراحل جديدة حاليًا. يمكنك مراجعة نتائجك السابقة والعودة لاحقًا.",
+      sessionNo: Number(enrollment.data.sessionNo ?? 1),
+      stagesInSession: Number(enrollment.data.stagesInSession ?? 0),
+    };
+  }
+
   const totalQuestions = Number(enrollment.data.totalQuestions ?? 0);
   const target = masteryTarget(enrollment.data, settings);
   if (
@@ -683,9 +678,17 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
   const stageNo = Number(enrollment.data.stagesCompleted ?? 0) + 1;
   const sessionNo = Number(enrollment.data.sessionNo ?? 1);
   const stageInSession = Number(enrollment.data.stagesInSession ?? 0) + 1;
-  const newCount = stageNo <= 4 ? 1 : settings.newPerStage;
-  const reviewCount = stageNo <= 4 ? stageNo - 1 : settings.reviewPerStage;
-  const stageSize = Math.max(1, settings.stageSize);
+
+  // A student who did not reach the configured pass mark gets a recovery stage:
+  // more review, fewer new questions. Once they pass, the normal split returns.
+  const lastScore = Number(lastSubmittedData?.score);
+  const failedLast =
+    lastSubmittedData !== null &&
+    Number.isFinite(lastScore) &&
+    lastScore < settings.passThreshold;
+  const newCount = failedLast ? settings.failedNewPerStage : settings.newPerStage;
+  const reviewCount = failedLast ? settings.failedReviewPerStage : settings.reviewPerStage;
+  const stageSize = Math.max(1, Math.min(20, newCount + reviewCount));
 
   const selected = await selectQuestions(
     uid,
@@ -946,6 +949,7 @@ async function submitStage(
         oldMastery,
         now,
         settings.intervalMinutes,
+        settings.wrongIntervalMinutes,
       );
       const firstAttemptCorrect = old ? Boolean(old.firstAttemptCorrect) : isCorrect;
 
@@ -1155,6 +1159,7 @@ async function selfGradeQuestion(
       oldMastery,
       now,
       settings.intervalMinutes,
+      settings.wrongIntervalMinutes,
     );
 
     tx.update(progressRef, {
@@ -1171,12 +1176,20 @@ async function selfGradeQuestion(
     });
 
     const oldAnswers = (currentAttemptData.answers ?? []) as Array<Record<string, unknown>>;
+    const updatedAnswers = oldAnswers.map((answer) =>
+      answer.questionId === questionId
+        ? { ...answer, selfScore, isCorrect, gradedAt: now }
+        : answer,
+    );
+    const correctAfterSelfGrade = updatedAnswers.filter(
+      (answer) => answer.isCorrect === true,
+    ).length;
     tx.update(attemptRef, {
-      answers: oldAnswers.map((answer) =>
-        answer.questionId === questionId
-          ? { ...answer, selfScore, isCorrect, gradedAt: now }
-          : answer,
-      ),
+      answers: updatedAnswers,
+      // The submit step can only grade objective questions. Recompute the
+      // stage score after self-grading so a student is not marked as failed
+      // merely because short answers were pending review.
+      score: Math.round((correctAfterSelfGrade / Math.max(1, updatedAnswers.length)) * 100),
     });
 
     if (masteryDelta > 0) {
@@ -1293,7 +1306,10 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
   );
   if (!enrollmentSnap.exists()) throw appError("NOT_ENROLLED", "not-found");
   const enrollment = enrollmentSnap.data();
-  const settings = await getSettings(subjectId);
+  const [settings, globalSettings] = await Promise.all([
+    getSettings(subjectId),
+    fetchGlobalSettings(),
+  ]);
 
   const [unitsSnap, progressSnap] = await Promise.all([
     getDocs(
@@ -1329,6 +1345,11 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
     completedAt: toMillis(enrollment.completedAt),
     masteryCompletedAt: toMillis(enrollment.masteryCompletedAt),
+    stagesLocked: Boolean(globalSettings.stagesLocked || settings.stagesLocked),
+    lockMessage:
+      globalSettings.lockMessage ||
+      settings.lockMessage ||
+      "أوقفت الإدارة فتح مراحل جديدة حاليًا.",
     byUnit: unitsSnap.docs.map((unitDoc) => {
       const unit = unitDoc.data();
       const progress = progressByUnit.get(unitDoc.id);

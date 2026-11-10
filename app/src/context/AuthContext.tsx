@@ -47,6 +47,7 @@ function profileFromData(uid: string, data: Record<string, unknown>): Profile {
     displayName: String(data.displayName ?? data.username ?? "طالب"),
     branch,
     role,
+    mustChangePassword: data.mustChangePassword === true,
   };
 }
 

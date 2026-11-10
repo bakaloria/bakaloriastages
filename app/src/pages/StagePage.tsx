@@ -9,6 +9,7 @@ import {
   ChevronLeftIcon,
   ClockIcon,
   FlagIcon,
+  LockIcon,
   RefreshIcon,
   SparklesIcon,
   XIcon,
@@ -82,6 +83,8 @@ export function StagePage() {
   const [startedAt, setStartedAt] = useState<Record<string, number>>({});
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lockTarget, setLockTarget] = useState<number | null>(null);
+  const [adminLocked, setAdminLocked] = useState(false);
+  const [lockMessage, setLockMessage] = useState("");
   const [feedbackMode, setFeedbackMode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -116,6 +119,8 @@ export function StagePage() {
       const data: StartStageResponse = await api.startStage(subjectId);
       if ("locked" in data) {
         setLockTarget(data.nextAvailableAt);
+        setAdminLocked(Boolean(data.adminLocked));
+        setLockMessage(String(data.lockMessage ?? ""));
         setPhase("locked");
         return;
       }
@@ -247,6 +252,8 @@ export function StagePage() {
       await api.markStageFeedbackSeen(resultMeta.attemptId);
       if (resultMeta.sessionComplete) {
         setLockTarget(resultMeta.nextAvailableAt ?? Date.now());
+        setAdminLocked(false);
+        setLockMessage("");
         setPhase("locked");
         return;
       }
@@ -291,17 +298,31 @@ export function StagePage() {
   if (phase === "locked") {
     return (
       <div className="page">
-        <div className="session-card">
-          <div className="session-card__icon"><ClockIcon /></div>
-          <span className="eyebrow">انتهت الجلسة</span>
-          <h1>خذ قسطًا من الراحة</h1>
-          <p>
-            المراجعة المتباعدة تحتاج فاصلًا حتى يثبت ما تعلمته. الجلسة التالية تبدأ بعد:
-          </p>
-          <div className="session-card__countdown">
-            <Countdown target={lockTarget} />
+        <div className={`session-card${adminLocked ? " session-card--admin-lock" : ""}`}>
+          <div className="session-card__icon">
+            {adminLocked ? <LockIcon /> : <ClockIcon />}
           </div>
-          <p className="muted small">لا تحتاج إلى البقاء في الصفحة؛ سيعود العدّاد عند فتحها مرة أخرى.</p>
+          <span className="eyebrow">{adminLocked ? "إعلان إداري" : "انتهت الجلسة"}</span>
+          <h1>{adminLocked ? "المراحل مغلقة مؤقتًا" : "خذ قسطًا من الراحة"}</h1>
+          {adminLocked ? (
+            <>
+              <p>{lockMessage || "أوقفت الإدارة فتح مراحل جديدة حاليًا. يمكنك مراجعة نتائجك السابقة والعودة لاحقًا."}</p>
+              <div className="inline-alert inline-alert--gold">
+                <LockIcon />
+                <span>سيُرفع الإغلاق من لوحة تحكم الإدارة، وسيعمل زر المرحلة مباشرة بعدها.</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                المراجعة المتباعدة تحتاج فاصلًا حتى يثبت ما تعلمته. الجلسة التالية تبدأ بعد:
+              </p>
+              <div className="session-card__countdown">
+                <Countdown target={lockTarget} />
+              </div>
+              <p className="muted small">لا تحتاج إلى البقاء في الصفحة؛ سيعود العدّاد عند فتحها مرة أخرى.</p>
+            </>
+          )}
           <div className="button-row">
             <Link to={`/subject/${subjectId}`} className="button button--primary">
               العودة للمادة

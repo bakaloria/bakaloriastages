@@ -6,8 +6,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // The role lives both in Auth (custom claim, when the Admin SDK sets it)
+    // and in the user profile. Spark mode cannot mint custom claims in the
+    // browser, so the profile document is the reliable source of truth.
     function isAdmin() {
-      return isSignedIn() && request.auth.token.role == 'admin';
+      return isSignedIn() && (
+        ('role' in request.auth.token && request.auth.token.role == 'admin') ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'
+        )
+      );
     }
 
     function isOwner(userId) {
@@ -19,49 +28,56 @@ service cloud.firestore {
     // firestore.functions.rules instead.
 
     match /users/{uid} {
-      allow read: if isOwner(uid) || isAdmin();
+      allow get, list: if isOwner(uid) || isAdmin();
       allow create: if isOwner(uid)
         && request.resource.data.role == 'student'
         && request.resource.data.branch in ['scientific', 'literary']
         && request.resource.data.username is string
         && request.resource.data.usernameLower is string;
-      allow update: if isOwner(uid)
+      allow update: if isAdmin() || (
+        isOwner(uid)
         && request.resource.data.role == resource.data.role
-        && request.resource.data.branch == resource.data.branch;
+        && request.resource.data.branch == resource.data.branch
+      );
       allow delete: if false;
     }
 
     // The client creates its username reservation inside the registration
     // transaction. It may read its own reservation but never edit it.
+    // Admins may move the reservation when they change their login name.
     match /usernames/{username} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.username == username
-        && username.matches('^[a-z0-9_]{3,20}$');
-      allow update, delete: if false;
+      allow get, list: if isSignedIn();
+      allow create: if isSignedIn() && (
+        isAdmin() ||
+        (
+          request.resource.data.uid == request.auth.uid
+          && request.resource.data.username == username
+          && username.matches('^[a-z0-9_]{3,20}$')
+        )
+      );
+      allow update, delete: if isAdmin();
     }
 
     // Catalogue and question bank. The importer uses the Admin SDK, which
-    // bypasses these rules.
+    // bypasses these rules. Admins can curate the bank from the dashboard.
     match /subjects/{subjectId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /units/{unitId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /lessons/{lessonId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /questions/{questionId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     // Spark grading runs in the browser, so signed-in students need the answer
@@ -69,22 +85,36 @@ service cloud.firestore {
     // this collection completely private.
     match /question_answers/{questionId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /unit_totals/{unitTotalId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
     match /subject_settings/{subjectId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
     }
 
+    // Global app settings (stage lock, registration switch, maintenance note).
     match /settings/{settingsId} {
       allow read: if isSignedIn();
-      allow write: if false;
+      allow write: if isAdmin();
+    }
+
+    // Notices are public to signed-in students while active; admins see and
+    // manage the full history.
+    match /announcements/{announcementId} {
+      allow get, list: if isSignedIn() && (isAdmin() || resource.data.active == true);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /admin_audit/{entryId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
     }
 
     // Enrollments are readable to signed-in students because the leaderboard
@@ -104,15 +134,24 @@ service cloud.firestore {
         && request.resource.data.nextAvailableAt == null
         && request.resource.data.completedAt == null
         && request.resource.data.masteryCompletedAt == null;
-      allow update: if isSignedIn()
+      allow update: if isAdmin() || (
+        isSignedIn()
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == resource.data.userId
-        && request.resource.data.subjectId == resource.data.subjectId;
+        && request.resource.data.subjectId == resource.data.subjectId
+      );
       allow delete: if false;
     }
 
+    // Student-owned documents need a get allowance for documents that do not
+    // exist yet. Without `resource == null`, Firestore rejects the very first
+    // read inside startStage/submitStage with "Missing or insufficient
+    // permissions" before the transaction has a chance to create anything.
     match /progress/{progressId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (
+        isAdmin() || resource == null || resource.data.userId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.subjectId is string
@@ -126,7 +165,10 @@ service cloud.firestore {
     }
 
     match /unit_progress/{unitProgressId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (
+        isAdmin() || resource == null || resource.data.userId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.subjectId is string
@@ -140,22 +182,30 @@ service cloud.firestore {
     }
 
     match /stage_attempts/{attemptId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (
+        isAdmin() || resource == null || resource.data.userId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.subjectId is string
         && request.resource.data.status == 'in_progress'
         && request.resource.data.items is list
         && request.resource.data.items.size() > 0;
-      allow update: if isSignedIn()
+      allow update: if isAdmin() || (
+        isSignedIn()
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == resource.data.userId
-        && request.resource.data.subjectId == resource.data.subjectId;
+        && request.resource.data.subjectId == resource.data.subjectId
+      );
       allow delete: if false;
     }
 
     match /final_exam_attempts/{attemptId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (
+        isAdmin() || resource == null || resource.data.userId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create, update: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && (resource == null || resource.data.userId == request.auth.uid);
@@ -163,7 +213,10 @@ service cloud.firestore {
     }
 
     match /certificates/{certificateId} {
-      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow get: if isSignedIn() && (
+        isAdmin() || resource == null || resource.data.userId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (isAdmin() || resource.data.userId == request.auth.uid);
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.subjectId is string;

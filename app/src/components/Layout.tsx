@@ -1,19 +1,26 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { branchLabel } from "../lib/format";
 import {
+  fetchActiveAnnouncements,
+  unseenAnnouncementCount,
+} from "../lib/announcements";
+import {
+  BellIcon,
   ChartIcon,
   HomeIcon,
   LogoutIcon,
+  ShieldIcon,
   TrophyIcon,
   UserIcon,
 } from "./Icons";
 
-const navItems = [
+const baseNavItems = [
   { to: "/", label: "الرئيسية", icon: HomeIcon, end: true },
   { to: "/progress", label: "تقدمي", icon: ChartIcon },
   { to: "/leaderboard", label: "المتصدرون", icon: TrophyIcon },
+  { to: "/notifications", label: "الإشعارات", icon: BellIcon },
   { to: "/account", label: "حسابي", icon: UserIcon },
 ];
 
@@ -38,10 +45,32 @@ export function BrandMark() {
 export function Layout() {
   const { profile, logout } = useAuth();
   const location = useLocation();
+  const [unread, setUnread] = useState(0);
+
+  const navItems = useMemo(
+    () =>
+      profile?.role === "admin"
+        ? [...baseNavItems, { to: "/admin", label: "الإدارة", icon: ShieldIcon }]
+        : baseNavItems,
+    [profile?.role],
+  );
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!profile) return;
+    let active = true;
+    void fetchActiveAnnouncements()
+      .then((rows) => {
+        if (active) setUnread(unseenAnnouncementCount(rows));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [profile, location.pathname]);
 
   return (
     <div className="app-shell">
@@ -64,6 +93,9 @@ export function Layout() {
                 className={({ isActive }) => `desktop-nav__link${isActive ? " is-active" : ""}`}
               >
                 {item.label}
+                {item.to === "/notifications" && unread > 0 ? (
+                  <span className="nav-count">{unread}</span>
+                ) : null}
               </NavLink>
             ))}
           </nav>
@@ -89,7 +121,11 @@ export function Layout() {
         <Outlet />
       </main>
 
-      <nav className="bottom-nav" aria-label="التنقل السفلي">
+      <nav
+        className="bottom-nav"
+        aria-label="التنقل السفلي"
+        style={{ gridTemplateColumns: `repeat(${navItems.length}, 1fr)` }}
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
           return (
@@ -99,7 +135,12 @@ export function Layout() {
               end={item.end}
               className={({ isActive }) => `bottom-nav__link${isActive ? " is-active" : ""}`}
             >
-              <Icon />
+              <span className="bottom-nav__icon">
+                <Icon />
+                {item.to === "/notifications" && unread > 0 ? (
+                  <span className="nav-dot" aria-label={`${unread} إشعارات جديدة`} />
+                ) : null}
+              </span>
               <span>{item.label}</span>
             </NavLink>
           );

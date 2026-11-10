@@ -2,10 +2,12 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { ProtectedLayout } from "./components/ProtectedLayout";
 import { AccountPage } from "./pages/AccountPage";
+import { AdminPage } from "./pages/AdminPage";
 import { CertificatePage } from "./pages/CertificatePage";
 import { HomePage } from "./pages/HomePage";
 import { LeaderboardPage } from "./pages/LeaderboardPage";
 import { LoginPage } from "./pages/LoginPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
 import { ProgressPage } from "./pages/ProgressPage";
 import { SetupPage } from "./pages/SetupPage";
 import { StagePage } from "./pages/StagePage";
@@ -26,6 +28,8 @@ function AppRoutes() {
         <Route path="/progress" element={<ProgressPage />} />
         <Route path="/leaderboard" element={<LeaderboardPage />} />
         <Route path="/leaderboard/:subjectId" element={<LeaderboardPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
+        <Route path="/admin" element={<AdminPage />} />
         <Route path="/certificate/:subjectId" element={<CertificatePage />} />
         <Route path="/account" element={<AccountPage />} />
       </Route>

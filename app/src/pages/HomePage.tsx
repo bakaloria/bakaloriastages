@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { collection, onSnapshot, orderBy, query, where } from "firebase/firestore";
+import { AnnouncementBanner } from "../components/AnnouncementBanner";
 import { Countdown } from "../components/Countdown";
 import { EmptyState } from "../components/EmptyState";
 import { ChevronLeftIcon, ClockIcon, SparklesIcon, TrophyIcon } from "../components/Icons";
@@ -98,6 +99,7 @@ export function HomePage() {
 
   return (
     <div className="page home-page">
+      <AnnouncementBanner />
       <section className="home-hero">
         <div className="home-hero__content">
           <span className="eyebrow">

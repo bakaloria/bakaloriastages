@@ -125,6 +125,7 @@ export function SubjectPage() {
   const masteryTarget = Number(progress?.masteryTarget ?? total);
   const nextAvailableAt = toMillis(progress?.nextAvailableAt);
   const locked = Boolean(nextAvailableAt && nextAvailableAt > Date.now());
+  const stagesLocked = Boolean(progress?.stagesLocked);
   const completed = Boolean(progress?.completedAt);
   const canClaim = completed || (total > 0 && covered >= total && mastered >= masteryTarget);
 
@@ -181,6 +182,16 @@ export function SubjectPage() {
             <AwardIcon />
             استلم شهادة الإتمام
           </Link>
+        ) : stagesLocked ? (
+          <div className="locked-action locked-action--admin">
+            <span className="locked-action__icon"><LockIcon /></span>
+            <div>
+              <strong>المراحل مغلقة مؤقتًا</strong>
+              <span className="muted small">
+                {progress?.lockMessage || "أوقفت الإدارة فتح مراحل جديدة حاليًا."}
+              </span>
+            </div>
+          </div>
         ) : locked ? (
           <div className="locked-action">
             <span className="locked-action__icon"><LockIcon /></span>

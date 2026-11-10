@@ -21,6 +21,7 @@ export interface Profile {
   displayName: string;
   branch: Branch;
   role: "student" | "admin";
+  mustChangePassword?: boolean;
 }
 
 export interface Subject {
@@ -57,6 +58,8 @@ export interface SubjectProgress {
   nextAvailableAt: number | null;
   completedAt: number | null;
   masteryCompletedAt: number | null;
+  stagesLocked: boolean;
+  lockMessage: string;
   byUnit: UnitProgress[];
 }
 
@@ -84,6 +87,8 @@ export interface StageLocked {
   nextAvailableAt: number;
   sessionNo?: number;
   stagesInSession?: number;
+  adminLocked?: boolean;
+  lockMessage?: string;
 }
 
 export interface StageFeedbackRequired {
@@ -174,4 +179,60 @@ export interface RegisterInput {
   password: string;
   displayName: string;
   branch: Branch;
+}
+
+export interface SubjectSettings {
+  stageSize: number;
+  newPerStage: number;
+  reviewPerStage: number;
+  failedNewPerStage: number;
+  failedReviewPerStage: number;
+  passThreshold: number;
+  sessionStages: number;
+  intervalMinutes: number;
+  wrongIntervalMinutes: number;
+  masteryThreshold: number;
+  finalExamRequired: boolean;
+  stagesLocked: boolean;
+  lockMessage: string;
+}
+
+export interface GlobalSettings {
+  stagesLocked: boolean;
+  registrationsOpen: boolean;
+  lockMessage: string;
+  maintenanceMessage: string;
+}
+
+export type AnnouncementTone = "info" | "success" | "warning" | "danger";
+
+export interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  tone: AnnouncementTone;
+  active: boolean;
+  pinned: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+  expiresAt?: unknown;
+  createdBy?: string;
+}
+
+export interface AdminUserRow {
+  uid: string;
+  username: string;
+  displayName: string;
+  branch: Branch;
+  role: "student" | "admin";
+  createdAt?: unknown;
+}
+
+export interface AdminAuditEntry {
+  id?: string;
+  action: string;
+  detail: string;
+  adminUid: string;
+  adminName: string;
+  createdAt?: unknown;
 }

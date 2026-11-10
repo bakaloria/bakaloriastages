@@ -67,6 +67,13 @@ interface QuestionPublic {
   options?: unknown;
   orderIndex: number;
   active: boolean;
+  // Spark mode stores the answer key inline so a full bank import stays inside
+  // the free write quota. The hardened backend keeps these fields out of the
+  // question document and uses `question_answers` instead.
+  grading?: Grading;
+  correct?: unknown;
+  modelAnswer?: unknown;
+  explanation?: string | null;
 }
 
 interface QuestionPrivate {
@@ -796,10 +803,9 @@ async function submitStage(
     answerList.map((answer) => [String(answer.questionId), answer]),
   );
 
-  const [questionSnaps, privateSnaps] = await Promise.all([
-    Promise.all(items.map((item) => getDoc(doc(firestore, "questions", item.questionId)))),
-    Promise.all(items.map((item) => getDoc(doc(firestore, "question_answers", item.questionId)))),
-  ]);
+  const questionSnaps = await Promise.all(
+    items.map((item) => getDoc(doc(firestore, "questions", item.questionId))),
+  );
 
   const questions = new Map(
     questionSnaps.map((snap) => [
@@ -807,12 +813,36 @@ async function submitStage(
       (snap.exists() ? { id: snap.id, ...snap.data() } : null) as QuestionPublic | null,
     ]),
   );
-  const privateData = new Map(
-    privateSnaps.map((snap) => [
-      snap.id,
-      (snap.exists() ? snap.data() : null) as QuestionPrivate | null,
-    ]),
+
+  // New Spark imports embed the answer key in the question document. Older
+  // demo/imported questions still use the separate question_answers collection,
+  // so fall back only for those questions.
+  const privateData = new Map<string, QuestionPrivate | null>();
+  const missingAnswerIds: string[] = [];
+  for (const item of items) {
+    const question = questions.get(item.questionId);
+    if (question?.grading) {
+      privateData.set(item.questionId, {
+        grading: question.grading,
+        correct: question.correct,
+        modelAnswer: question.modelAnswer,
+        explanation: question.explanation ?? null,
+      });
+    } else {
+      missingAnswerIds.push(item.questionId);
+    }
+  }
+  const privateSnaps = await Promise.all(
+    missingAnswerIds.map((questionId) =>
+      getDoc(doc(firestore, "question_answers", questionId)),
+    ),
   );
+  privateSnaps.forEach((snap, index) => {
+    privateData.set(
+      missingAnswerIds[index],
+      (snap.exists() ? snap.data() : null) as QuestionPrivate | null,
+    );
+  });
 
   const graded: GradedAnswer[] = items.map((item) => {
     const question = questions.get(item.questionId);

@@ -21,8 +21,10 @@
 
 - الطالب يسجل بـ username/password، وFirebase Auth يستخدم بريدًا صناعيًا داخليًا.
 - Firestore يحفظ التقدم والاستجابات.
-- في وضع Spark: التطبيق يقرأ `question_answers` ويصحح ويكتب التقدم مباشرة، مع قواعد
-  Firestore تقصر كل سجل على صاحبه. الترتيب غير محصّن ضد التلاعب.
+- في وضع Spark: التطبيق يقرأ الإجابة من مستند السؤال (`grading`, `correct`,
+  `modelAnswer`) ويصحح ويكتب التقدم مباشرة، مع قواعد Firestore تقصر كل سجل على
+  صاحبه. `question_answers` يبقى خيارًا احتياطيًا للأسئلة القديمة. الترتيب غير
+  محصّن ضد التلاعب.
 - في وضع Functions: Cloud Functions تصحح الإجابات وتفرض الفواصل الزمنية وتمنع الغش،
   لأنها تعمل بـ Admin SDK.
 - App Check اختياري، ويحمي Firestore من الاستدعاءات خارج التطبيق.
@@ -209,7 +211,9 @@ await admin.firestore().doc("users/<UID>").set({ role: "admin" }, { merge: true 
 
 ### `questions/{questionId}`
 
-هذه بيانات عامة فقط. لا يوجد فيها الجواب الصحيح.
+في وضع Functions هذه بيانات عامة فقط ولا يوجد فيها الجواب الصحيح. في وضع Spark
+تُضاف حقول التصحيح إلى مستند السؤال نفسه، لأن التصحيح يجري في المتصفح ولأن ذلك
+يخفض عدد الكتابات عند استيراد بنك كامل إلى النصف.
 
 ```json
 {
@@ -220,14 +224,19 @@ await admin.firestore().doc("users/<UID>").set({ role: "admin" }, { merge: true 
   "text": "نص السؤال",
   "options": ["أ", "ب", "ج", "د"],
   "orderIndex": 1,
-  "active": true
+  "active": true,
+  "grading": "auto",
+  "correct": { "index": 2 },
+  "modelAnswer": "الإجابة النموذجية",
+  "explanation": "شرح مختصر"
 }
 ```
 
 ### `question_answers/{questionId}`
 
-في وضع Functions لا يقرأها الطالب إطلاقًا. في وضع Spark يقرأها العميل للتصحيح،
-لذلك لا تُعد سرًا.
+في وضع Functions لا يقرأها الطالب إطلاقًا، وهي إلزامية هناك. في وضع Spark تُستخدم
+كخيار احتياطي للأسئلة القديمة أو التجريبية فقط؛ الأسئلة المستوردة حديثًا تحمل
+`grading` و`correct` و`modelAnswer` و`explanation` داخل مستند السؤال.
 
 ```json
 {
@@ -292,6 +301,10 @@ await admin.firestore().doc("users/<UID>").set({ role: "admin" }, { merge: true 
 ويقسمه إلى `questions` العامة و`question_answers` السرية، ويحسب `unit_totals` و
 `totalQuestions`. جرّبه أولًا بـ `--dry-run`، ثم نفّذه بعد ضبط
 `GOOGLE_APPLICATION_CREDENTIALS`:
+
+> استيراد وضع Spark المستخدم لبنك هذا التطبيق يضع الإجابة داخل مستند السؤال
+> (`questions`) ولا يكتب `question_answers`، ليبقى عدد الكتابات ضمن الحصة المجانية.
+> يمكن لاحقًا إعادة الاستيراد بوضع Functions لإخراج الإجابات إلى المجموعة المنفصلة.
 
 ```bash
 GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json --dry-run

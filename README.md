@@ -19,9 +19,19 @@
 - Firestore: مشروع `bakaloriarace`، قاعدة `(default)` في `europe-west9`.
 - النطاق `bakaloria.github.io` مضاف إلى Authorized domains في Firebase Auth.
 
-> يوجد حاليًا في Firestore مادة تجريبية باسم **«مادة تجريبية»** ومعرّفها `demo`
-> (6 أسئلة) لاختبار المسار الكامل. احذفها من Firestore Console بعد استيراد
-> بنك الأسئلة الحقيقي، أو أبقِها كمثال.
+> تم استيراد بنك الأسئلة من التطبيق السابق إلى Firestore: **6 مواد و11,901 سؤالًا**
+> في 44 وحدة و407 دروس:
+>
+> - علم الأحياء: 2,366 سؤالًا (علمي)
+> - الكيمياء: 1,347 سؤالًا (علمي)
+> - الفيزياء: 1,384 سؤالًا (علمي)
+> - اللغة الإنكليزية: 1,067 سؤالًا (علمي وأدبي)
+> - الفلسفة: 1,689 سؤالًا (أدبي)
+> - التاريخ: 4,048 سؤالًا (أدبي)
+>
+> أُزيلت مادة `demo` التجريبية بعد التحقق. الجغرافيا (2,788 سؤالًا) ما زالت في
+> التطبيق السابق ولم تُستورد لأن ملفها المحلي غير متوفر وحدّ قراءة مشروعها القديم
+> وصل إلى الحد اليومي.
 
 ## البنية
 
@@ -108,8 +118,8 @@ GCLOUD_PROJECT=bakaloriarace node functions/scripts/set-admin.mjs <UID>
 - `subjects/{subjectId}`: `name`, `branches`, `active`, `sort`, `totalQuestions`, `icon`, `color`.
 - `units/{unitId}`: `subjectId`, `title`, `sort`.
 - `lessons/{lessonId}`: `subjectId`, `unitId`, `title`, `sort`.
-- `questions/{questionId}`: بيانات السؤال العامة (`subjectId`, `unitId`, `lessonId`, `type`, `text`, `options`, `orderIndex`, `active`).
-- `question_answers/{questionId}`: الإجابة الصحيحة والنموذجية والشرح والتقييم. في وضع Spark يقرأها العميل للتصحيح، لذلك لا تُعد سرًا; في وضع Functions تبقى مغلقة تمامًا.
+- `questions/{questionId}`: بيانات السؤال (`subjectId`, `unitId`, `lessonId`, `type`, `text`, `options`, `orderIndex`, `active`). في وضع Spark تُضاف إليها `grading`, `correct`, `modelAnswer`, `explanation` لتصحيح من دون قراءة مستند إجابة منفصل، ما يبقي استيراد البنك كاملًا ضمن حصة الكتابة المجانية.
+- `question_answers/{questionId}`: الإجابة الصحيحة والنموذجية والشرح والتقييم. في وضع Functions تبقى مغلقة تمامًا. في وضع Spark تُستخدم كخيار احتياطي للأسئلة القديمة/التجريبية فقط؛ الأسئلة المستوردة حديثًا تحمل الإجابة داخل مستند السؤال.
 - `unit_totals/{subjectId}_{unitId}`: `total`, `title` (اختياري لكن يسرّع العرض).
 
 تفاصيل الحقول موجودة في `FIREBASE-SETUP-ar.md`.
@@ -188,10 +198,10 @@ git push origin main
 - [x] تفعيل GitHub Pages (Source: main / docs) والرابط المباشر يعمل.
 - [x] إنشاء Firestore في مشروع `bakaloriarace` (Authentication مفعّل بالفعل).
 - [x] نشر قواعد Firestore والفهارس.
-- [x] اختبار قواعد الأمان والاستعلامات والفهارس (16/16 و13/13).
+- [x] اختبار قواعد الأمان والاستعلامات والفهارس على البنك الحقيقي (32/32).
 - [x] إضافة `bakaloria.github.io` إلى Authorized domains.
-- [x] إدخال مادة تجريبية صغيرة (6 أسئلة) لاختبار المسار.
-- [ ] استيراد بنك الأسئلة الفعلي إلى Firestore.
+- [x] استيراد بنك الأسئلة الفعلي (6 مواد، 11,901 سؤالًا) إلى Firestore مع إجابات مدمجة.
+- [x] إزالة المادة التجريبية `demo` بعد التحقق من البنك الحقيقي.
 - [ ] اختبار المسار الكامل من واجهة المتصفح بحساب طالب حقيقي.
 - [ ] الترقية الاختيارية إلى Blaze ووضع Functions.
 - [ ] الامتحان النهائي ولوحة تحكم المشرف.
@@ -204,7 +214,9 @@ git push origin main
 
 ### وضع Spark (الافتراضي المجاني)
 
-- التصحيح يتم في المتصفح، لذلك `question_answers` متاحة للطلاب المسجلين.
+- التصحيح يتم في المتصفح، لذلك الإجابات مدمجة في `questions` (`grading`, `correct`,
+  `modelAnswer`) أو في `question_answers` للأسئلة القديمة، وكلها متاحة للطلاب
+  المسجلين.
 - `enrollments` مقروءة للمسجلين لأن الترتيب يُبنى منها؛ الكتابة مقصورة على صاحب السجل.
 - `progress` و`stage_attempts` و`unit_progress` و`certificates` خاصة بصاحبها.
 - يمكن لطالب متمكن تعديل درجاته أو ترتيبه عبر SDK. هذا مقبول لتطبيق تعليمي، وليس لاختبار رسمي.

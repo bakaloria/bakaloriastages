@@ -60,10 +60,14 @@ export function computeNextReviewAt(
   isCorrect: boolean,
   oldLevel: number,
   now: Timestamp,
+  intervalMinutes: number,
 ): Timestamp {
   if (!isCorrect) return Timestamp.fromMillis(now.toMillis() + 10 * 60 * 1000);
-  const days = [1, 3, 7, 14][Math.max(0, Math.min(3, Math.floor(oldLevel)))];
-  return Timestamp.fromMillis(now.toMillis() + days * 24 * 60 * 60 * 1000);
+  // The admin interval is the base review gap. Mastered questions wait a
+  // little longer at each level, so successful recall is spaced out.
+  const factor = [1, 3, 7, 14][Math.max(0, Math.min(3, Math.floor(oldLevel)))];
+  const baseMs = Math.max(0, intervalMinutes) * 60 * 1000;
+  return Timestamp.fromMillis(now.toMillis() + baseMs * factor);
 }
 
 export async function getSettings(subjectId: string): Promise<SubjectSettings> {

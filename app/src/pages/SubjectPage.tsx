@@ -143,7 +143,9 @@ export function SubjectPage() {
         <div className="subject-hero__info">
           <span className="eyebrow">
             <BookIcon />
-            {branchLabel(subject.branches?.[0])}
+            {subject.branches?.length
+              ? subject.branches.map((branch) => branchLabel(branch)).join(" • ")
+              : "مادة دراسية"}
           </span>
           <h1>{subject.name}</h1>
           <p>{subject.description || "مادة تراكمية: كل مرحلة تضيف أسئلة جديدة وتراجع ما تعلمته."}</p>

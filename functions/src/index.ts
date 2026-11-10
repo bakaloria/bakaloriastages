@@ -412,7 +412,12 @@ export const submitStage = onCall({ enforceAppCheck: ENFORCE_APP_CHECK }, async 
       const firstSeen = oldSeen === 0;
       const firstCorrect = isCorrect && oldCorrect === 0;
       const nextLevel = computeMasteryLevel(oldMastery, isCorrect, oldNextReviewAt, now);
-      const nextReviewAt = computeNextReviewAt(isCorrect, oldMastery, now);
+      const nextReviewAt = computeNextReviewAt(
+        isCorrect,
+        oldMastery,
+        now,
+        settings.intervalMinutes,
+      );
       const firstAttemptCorrect = old ? Boolean(old.firstAttemptCorrect) : isCorrect;
 
       if (firstSeen) coverageDelta += 1;
@@ -616,7 +621,12 @@ export const selfGradeQuestion = onCall({ enforceAppCheck: ENFORCE_APP_CHECK }, 
     const masteryDelta = isCorrect && !alreadyMastered ? 1 : 0;
     const oldMastery = Number(current.masteryLevel ?? 0);
     const nextLevel = isCorrect ? Math.min(3, Math.max(1, oldMastery + 1)) : oldMastery;
-    const nextReviewAt = computeNextReviewAt(isCorrect, oldMastery, now);
+    const nextReviewAt = computeNextReviewAt(
+      isCorrect,
+      oldMastery,
+      now,
+      settings.intervalMinutes,
+    );
 
     tx.update(progressRef, {
       pendingSelfGrade: false,

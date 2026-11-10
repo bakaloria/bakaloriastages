@@ -126,7 +126,8 @@ export FIREBASE_APPCHECK_DEBUG_TOKEN=true
 3. من Cloud Shell أو جهاز فيه Application Default Credentials:
 
 ```bash
-node scripts/set-admin.mjs <UID>
+npm --prefix functions install
+node functions/scripts/set-admin.mjs <UID>
 ```
 
 أو يدويًا:
@@ -255,6 +256,18 @@ await admin.firestore().doc("users/<UID>").set({ role: "admin" }, { merge: true 
 - `certificates/{uid}_{subjectId}`
 - `final_exam_attempts/{attemptId}` (لاحقًا)
 
+## استيراد آلي
+
+`functions/scripts/import-bank.mjs` يقرأ ملف JSON واحدًا بالشكل الموضح في README،
+ويقسمه إلى `questions` العامة و`question_answers` السرية، ويحسب `unit_totals` و
+`totalQuestions`. جرّبه أولًا بـ `--dry-run`، ثم نفّذه بعد ضبط
+`GOOGLE_APPLICATION_CREDENTIALS`:
+
+```bash
+GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json --dry-run
+GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json
+```
+
 ## ترتيب الأسئلة مهم
 
 `orderIndex` هو مؤشر تقدم الطالب داخل المادة:
@@ -330,10 +343,12 @@ await signInWithEmailAndPassword(auth, email, password);
 
 ## ما تبقّى قبل الإطلاق
 
-1. وضع `firebaseConfig` الحقيقي في `app/public/firebase-config.js`.
+1. تفعيل **Authentication → Email/Password** و**Firestore Database** في Console.
+   تحقّقنا عبر API أن Firestore API وIdentity Toolkit غير مفعّلين بعد في المشروع.
 2. استيراد بنك الأسئلة إلى Firestore بالصيغة أعلاه (`subjects`, `units`, `lessons`, `questions`, `question_answers`, `unit_totals`).
 3. نشر `firestore.rules` و`firestore.indexes.json` والدوال على مشروع `bakaloriarace`.
 4. إنشاء أول حساب ثم منحه صلاحية مشرف عبر `scripts/set-admin.mjs`.
 5. اختبار مسار كامل: تسجيل، انضمام، مرحلة، تقييم ذاتي، إجابة نموذجية، مرحلة تالية.
-6. تفعيل App Check بعد تسجيل reCAPTCHA v3.
-7. إضافة الامتحان النهائي ولوحة تحكم المشرف لاحقًا.
+6. تفعيل GitHub Pages من **Settings → Pages** (Source: main / docs).
+7. تفعيل App Check بعد تسجيل reCAPTCHA v3.
+8. إضافة الامتحان النهائي ولوحة تحكم المشرف لاحقًا.

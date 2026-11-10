@@ -23,7 +23,8 @@ functions/           Firebase Cloud Functions (TypeScript)
 firestore.rules      قواعد قراءة/كتابة Firestore
 firestore.indexes.json
 firebase.json
-scripts/set-admin.mjs
+functions/scripts/set-admin.mjs
+functions/scripts/import-bank.mjs
 supabase/            مخطط بديل غير مفعّل
 tools/               محاكاة التغطية والمراحل
 ```
@@ -74,7 +75,8 @@ npx firebase-tools deploy --only firestore:rules,firestore:indexes,functions
 8. أنشئ أول حساب طالب من التطبيق، ثم امنحه صلاحية مشرف:
 
 ```bash
-GCLOUD_PROJECT=bakaloriarace node scripts/set-admin.mjs <username>
+npm --prefix functions install   # مرة واحدة، لتثبيت firebase-admin
+GCLOUD_PROJECT=bakaloriarace node functions/scripts/set-admin.mjs <UID>
 ```
 
 ## استيراد المواد والأسئلة
@@ -89,6 +91,41 @@ GCLOUD_PROJECT=bakaloriarace node scripts/set-admin.mjs <username>
 - `unit_totals/{subjectId}_{unitId}`: `total`, `title` (اختياري لكن يسرّع العرض).
 
 تفاصيل الحقول موجودة في `FIREBASE-SETUP-ar.md`.
+
+### استيراد آلي من JSON
+
+الملف `functions/scripts/import-bank.mjs` يستورد المواد والوحدات والدروس والأسئلة
+والإجابات السرية دفعة واحدة، ويحسب `totalQuestions` و`unit_totals` تلقائيًا:
+
+```bash
+npm --prefix functions install
+# مطلوب Application Default Credentials أو service account مصرّح له
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
+GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json --dry-run
+GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json
+```
+
+صيغة مختصرة:
+
+```json
+{
+  "subjects": [{ "id": "history", "name": "التاريخ", "branches": ["literary"], "sort": 1 }],
+  "units": [{ "id": "history-u1", "subjectId": "history", "title": "الوحدة الأولى", "sort": 1 }],
+  "lessons": [{ "id": "history-u1-l1", "subjectId": "history", "unitId": "history-u1", "title": "الدرس الأول", "sort": 1 }],
+  "questions": [{
+    "id": "history-0001", "subjectId": "history", "unitId": "history-u1",
+    "lessonId": "history-u1-l1", "type": "mcq", "text": "نص السؤال",
+    "options": ["أ", "ب", "ج", "د"], "orderIndex": 1, "grading": "auto",
+    "correct": { "index": 0 }, "modelAnswer": { "index": 0 },
+    "explanation": "شرح مختصر"
+  }]
+}
+```
+
+- `orderIndex` يجب أن يكون فريدًا وتصاعديًا داخل كل مادة.
+- الأسئلة ذاتية التقييم تستخدم `"grading": "self"` مع `modelAnswer.text`.
+- الأسئلة الآلية تدعم `mcq` و`true_false` و`fill_blank` و`matching` و`ordering`.
+- الاستيراد يستخدم `merge` ولا يحذف ما ليس في الملف.
 
 ## النشر على GitHub Pages
 
@@ -113,15 +150,20 @@ git push origin main
 - [x] واجهة PWA عربية: دخول/تسجيل، مواد، مرحلة، نتائج، تقييم ذاتي، تقدم، ترتيب، حساب، شهادة.
 - [x] بناء إنتاجي إلى `docs/` مع مسار GitHub Pages وHashRouter.
 - [x] PWA: manifest وأيقونات وService Worker.
-- [ ] وضع `firebaseConfig` الحقيقي في `app/public/firebase-config.js` (التطبيق يعرض شاشة الإعداد حتى ذلك الحين).
+- [x] وضع `firebaseConfig` الحقيقي في `app/public/firebase-config.js`.
+- [x] رفع الكود ونسخة `docs/` إلى `bakaloria/bakaloriastages`.
+- [ ] تفعيل GitHub Pages (Source: main / docs) — التوكن المتاح لا يملك صلاحية Pages.
+- [ ] تفعيل Authentication → Email/Password وFirestore في مشروع `bakaloriarace`.
+- [ ] نشر قواعد Firestore والدوال (يتطلب تسجيل دخول Firebase/صلاحيات نشر).
 - [ ] استيراد بنك الأسئلة الفعلي إلى Firestore.
-- [ ] نشر قواعد Firestore والدوال على مشروع `bakaloriarace`.
+- [ ] إنشاء أول حساب ومنحه صلاحية مشرف.
 - [ ] تفعيل App Check بعد تسجيل reCAPTCHA v3.
 - [ ] الامتحان النهائي ولوحة تحكم المشرف.
 
-> ملاحظة: إذا لم تكن `apiKey` و`appId` مضبوطتين، يعرض التطبيق شاشة إعداد تسمح بلصق
-> `firebaseConfig` محليًا للمعاينة. الإعداد المحلي لا يكفي لجميع الطلاب؛ يجب وضع
-> الإعدادات في `app/public/firebase-config.js` وإعادة البناء والنشر.
+> ملاحظة: شاشة الإعداد المحلية ما زالت موجودة كحل مؤقت للمعاينة، لكنها تحفظ
+> الإعدادات في المتصفح فقط. الإعدادات المنشورة موجودة الآن في
+> `app/public/firebase-config.js`. يلزم تفعيل خدمات Firebase نفسها من Console
+> قبل أن يعمل تسجيل الدخول.
 
 ## الأمان
 

@@ -4,7 +4,7 @@ import { getFirestore } from "firebase-admin/firestore";
 
 const uid = process.argv[2];
 if (!uid) {
-  console.error("Usage: node scripts/set-admin.mjs <uid>");
+  console.error("Usage: node functions/scripts/set-admin.mjs <uid>");
   process.exit(1);
 }
 

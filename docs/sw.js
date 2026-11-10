@@ -1,7 +1,13 @@
 const CACHE = "bakaloriastages-v1";
 const BASE = "/bakaloriastages/";
 
-self.addEventListener("install", () => {
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll([`${BASE}index.html`, `${BASE}manifest.webmanifest`]))
+      .catch(() => undefined),
+  );
   self.skipWaiting();
 });
 
@@ -23,6 +29,13 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(event.request).catch(() => caches.match(`${BASE}index.html`)),
     );
+    return;
+  }
+
+  // Config changes must reach existing installs immediately, so never serve
+  // this file from the cache.
+  if (url.pathname.endsWith("/firebase-config.js")) {
+    event.respondWith(fetch(event.request));
     return;
   }
 

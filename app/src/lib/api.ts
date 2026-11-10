@@ -1,5 +1,6 @@
 import { httpsCallable } from "firebase/functions";
-import { functions } from "./firebase";
+import { backendMode, functions } from "./firebase";
+import { sparkApi } from "./spark";
 import type {
   Certificate,
   LeaderboardRow,
@@ -17,12 +18,19 @@ async function call<T>(name: string, data?: unknown): Promise<T> {
   return result.data as T;
 }
 
-export const api = {
+const callableApi = {
   register(input: RegisterInput) {
     return call<{ uid: string; email: string }>("register", input);
   },
   joinSubject(subjectId: string) {
-    return call<{ enrolled: boolean; totalQuestions: number }>("joinSubject", { subjectId });
+    return call<{
+      enrolled: boolean;
+      subjectId: string;
+      totalQuestions: number;
+      coverageCount: number;
+      masteryCount: number;
+      masteryTarget: number;
+    }>("joinSubject", { subjectId });
   },
   startStage(subjectId: string) {
     return call<StartStageResponse>("startStage", { subjectId });
@@ -57,3 +65,7 @@ export const api = {
     return call<{ certificate: Certificate }>("claimCertificate", { subjectId });
   },
 };
+
+// Spark runs everything in the browser on Firebase's free plan. The callable
+// backend stays available for Blaze projects with the hardened rules.
+export const api = backendMode === "functions" ? callableApi : sparkApi;

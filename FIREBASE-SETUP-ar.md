@@ -2,9 +2,9 @@
 
 ## القرار
 
-تم اختيار **Firebase** بدل Supabase.
+تم اختيار **Firebase** كـ backend وحيد.
 
-- تم حذف ملفات Supabase القديمة من المشروع. لا يوجد backend بديل مفعّل.
+- لا يوجد backend بديل مفعّل.
 - التنفيذ الفعلي أصبح في:
   - `firebase.json`
   - `.firebaserc`
@@ -12,15 +12,20 @@
   - `firestore.indexes.json`
   - `functions/`
 - مشروع Firebase: `bakaloriarace` (من إعدادات الويب التي أرسلتها).
+- الوضع الافتراضي **Spark المجاني**: لا Cloud Functions، والتصحيح يتم في الواجهة عبر
+  `app/src/lib/spark.ts`. هذا يكفي للخطة المجانية بدون بطاقة.
+- وضع **Functions** محفوظ في `functions/` للترقية الاختيارية إلى Blaze.
 - لا يتم تخزين أي مفتاح سري أو service account داخل المشروع.
 
 ## لماذا Firebase؟
 
 - الطالب يسجل بـ username/password، وFirebase Auth يستخدم بريدًا صناعيًا داخليًا.
 - Firestore يحفظ التقدم والاستجابات.
-- Cloud Functions هي التي تصحح الإجابات وتفرض الفواصل الزمنية وتمنع الغش، لأنها تعمل بـ Admin SDK.
-- الطالب لا يقرأ `question_answers` ولا يكتب `progress` مباشرة.
-- App Check يقلل استدعاءات السكربتات من خارج التطبيق.
+- في وضع Spark: التطبيق يقرأ `question_answers` ويصحح ويكتب التقدم مباشرة، مع قواعد
+  Firestore تقصر كل سجل على صاحبه. الترتيب غير محصّن ضد التلاعب.
+- في وضع Functions: Cloud Functions تصحح الإجابات وتفرض الفواصل الزمنية وتمنع الغش،
+  لأنها تعمل بـ Admin SDK.
+- App Check اختياري، ويحمي Firestore من الاستدعاءات خارج التطبيق.
 
 ## المتطلبات في Firebase Console
 
@@ -29,14 +34,18 @@
 1. **Authentication**
    - Enable sign-in method: **Email/Password**.
    - لا نحتاج Email verification أو password reset بالبريد في MVP، لأن البريد صناعي.
+   - من **Authentication → Settings → Authorized domains** أضف
+     `bakaloria.github.io` بعد نشر GitHub Pages (مطلوب لبعض عمليات Auth وApp Check).
 
 2. **Firestore Database**
+   - الرابط المباشر: <https://console.firebase.google.com/project/bakaloriarace/firestore>
    - Create database.
    - اختر نفس region الذي ستستخدمه للـ Functions إن أمكن.
    - Production mode.
 
-3. **Functions**
-   - Firebase Functions تحتاج خطة **Blaze** (الاستخدام ضمن الحصة المجانية غالبًا).
+3. **Functions (اختياري)**
+   - لا تحتاجها في وضع Spark المجاني.
+   - إذا أردت التصحيح الخادمي، رقّ إلى **Blaze** (الاستخدام ضمن الحصة المجانية غالبًا).
    - لا تضع service account JSON في المستودع.
 
 4. **App Check (اختياري الآن، موصى به قبل الإطلاق)**
@@ -46,7 +55,8 @@
      - انشر الدوال مع `ENFORCE_APP_CHECK=true` (متغير بيئة للدوال).
      - فعّل Enforcement على Firestore وCloud Functions من Firebase Console.
    - أثناء التطوير المحلي استخدم debug token.
-   - بدون App Check يبقى الأمان الأساسي في Firebase Auth + Firestore Rules + التصحيح داخل الخادم.
+   - بدون App Check يبقى الأمان الأساسي في Firebase Auth + Firestore Rules، مع
+     التصحيح في الواجهة في وضع Spark أو داخل الخادم في وضع Functions.
 
 5. **Hosting**
    - غير مطلوب الآن. يمكن نشر الواجهة لاحقًا على GitHub Pages أو Firebase Hosting.
@@ -65,6 +75,7 @@ window.__FIREBASE_CONFIG__ = {
   storageBucket: "bakaloriarace.firebasestorage.app",
   messagingSenderId: "...",
   appId: "...",
+  backendMode: "spark", // "spark" مجاني، أو "functions" بعد Blaze
   appCheckSiteKey: "" // املأه فقط بعد تفعيل App Check
 };
 ```
@@ -82,28 +93,41 @@ git push origin main
 
 بديل مؤقت: شاشة الإعداد داخل التطبيق تحفظ الإعدادات في `localStorage` للمتصفح الحالي فقط.
 
-## نشر القواعد والدوال
+## نشر القواعد (وضع Spark المجاني)
 
 من جذر المشروع:
 
 ```bash
+npx firebase-tools login
+npx firebase-tools use bakaloriarace
+npx firebase-tools deploy --only firestore:rules,firestore:indexes
+```
+
+لا تحتاج `functions/` في هذا الوضع. تأكد أن `backendMode` في `firebase-config.js`
+هو `"spark"`.
+
+### الترقية إلى وضع Functions (اختياري)
+
+```bash
+cp firestore.functions.rules firestore.rules
 cd functions
 npm install
 npm run build
 cd ..
-
-npx firebase-tools login
-npx firebase-tools use bakaloriarace
 npx firebase-tools deploy --only firestore:rules,firestore:indexes,functions
 ```
 
-أو بعد تثبيت CLI:
-
-```bash
-firebase deploy --only firestore:rules,firestore:indexes,functions
-```
+ثم بدّل `backendMode` إلى `"functions"` وأعد بناء `docs/`.
 
 ### تشغيل محلي
+
+وضع Spark لا يحتاج محاكي Functions:
+
+```bash
+firebase emulators:start --only auth,firestore
+```
+
+وضع Functions:
 
 ```bash
 cd functions
@@ -197,7 +221,8 @@ await admin.firestore().doc("users/<UID>").set({ role: "admin" }, { merge: true 
 
 ### `question_answers/{questionId}`
 
-هذه لا يقرأها الطالب إطلاقًا.
+في وضع Functions لا يقرأها الطالب إطلاقًا. في وضع Spark يقرأها العميل للتصحيح،
+لذلك لا تُعد سرًا.
 
 ```json
 {
@@ -277,7 +302,10 @@ GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json
 - لا تغيّر `orderIndex` بعد بدء الطلاب، وإلا قد تتكرر أسئلة أو تُتخطى.
 - عند إضافة أسئلة جديدة، أعطها أرقامًا أكبر من آخر `orderIndex` في المادة.
 
-## الدوال المتاحة (Callable)
+## الدوال المتاحة (Callable — وضع Functions فقط)
+
+> في وضع Spark لا تُستخدم هذه الدوال؛ الواجهة تستدعي `app/src/lib/spark.ts`
+> مباشرة. الأسماء والنتائج متطابقة تقريبًا لتسهيل التبديل.
 
 | الدالة | المدخل | الناتج المختصر |
 |---|---|---|
@@ -323,14 +351,24 @@ await signInWithEmailAndPassword(auth, email, password);
 
 ## الأمان
 
-- `firestore.rules` تمنع الطالب من:
+### وضع Spark (الافتراضي المجاني)
+
+- `firestore.rules` تسمح للطالب المسجل بقراءة `question_answers` لأن التصحيح في الواجهة.
+- `enrollments` مقروءة للمسجلين لبناء الترتيب، والكتابة لصاحب السجل فقط.
+- `progress` و`stage_attempts` و`unit_progress` و`certificates` خاصة بصاحبها.
+- يمكن لطالب متمكن تعديل درجاته عبر SDK. هذا مقبول لتطبيق تعليمي وليس اختبارًا رسميًا.
+- لا توجد حماية خادمية للفواصل الزمنية أو الترتيب.
+
+### وضع Functions
+
+- `firestore.functions.rules` تمنع الطالب من:
   - قراءة `question_answers`.
   - كتابة `enrollments` أو `progress` أو `stage_attempts` أو `certificates`.
   - قراءة بيانات طالب آخر.
 - التصحيح والفواصل الزمنية وتحديث التقدم كلها داخل Cloud Functions.
 - `questions` للقراءة الإدارية فقط؛ الطالب يستلم نص السؤال من الدالة.
-- `app_check` مفعّل على كل callable.
-- لا تضع `service_role` أو service account في الواجهة.
+- `app_check` مفعّل على كل callable بعد ضبطه.
+- لا تضع service account أو مفاتيح إدارية في الواجهة.
 - لا تعتمد على Firebase Web API key كسر؛ هو معرف عام، والحماية الحقيقية في Rules + App Check.
 
 ## ملاحظات مهمة
@@ -339,16 +377,18 @@ await signInWithEmailAndPassword(auth, email, password);
 - لإعادة تعيين كلمة المرور: أضف لاحقًا دالة إدارية أو رمز استعادة.
 - `getLeaderboard` يعتمد على `autoFirstCorrect` للأسئلة المصححة آليًا فقط، لأن أسئلة المقال والتقصير ذاتية.
 - الواجهة العربية PWA مبنية في `app/` وتُخرج إلى `docs/` للنشر على GitHub Pages.
-- لا يوجد Supabase في هذا المشروع؛ Firebase هو الـ backend الوحيد.
+- Firebase هو الـ backend الوحيد في هذا المشروع.
 
 ## ما تبقّى قبل الإطلاق
 
-1. تفعيل **Authentication → Email/Password** و**Firestore Database** في Console.
-   تحقّقنا عبر API أن Firestore API وIdentity Toolkit غير مفعّلين بعد في المشروع.
-2. استيراد بنك الأسئلة إلى Firestore بالصيغة أعلاه (`subjects`, `units`, `lessons`, `questions`, `question_answers`, `unit_totals`).
-3. نشر `firestore.rules` و`firestore.indexes.json` والدوال على مشروع `bakaloriarace`.
-4. إنشاء أول حساب ثم منحه صلاحية مشرف عبر `scripts/set-admin.mjs`.
-5. اختبار مسار كامل: تسجيل، انضمام، مرحلة، تقييم ذاتي، إجابة نموذجية، مرحلة تالية.
-6. تفعيل GitHub Pages من **Settings → Pages** (Source: main / docs).
-7. تفعيل App Check بعد تسجيل reCAPTCHA v3.
+1. تفعيل **Firestore Database** في Console؛ Authentication مفعّل بالفعل:
+   <https://console.firebase.google.com/project/bakaloriarace/firestore>
+2. نشر `firestore.rules` و`firestore.indexes.json` (وضع Spark، بدون Functions).
+3. استيراد بنك الأسئلة إلى Firestore بالصيغة أعلاه (`subjects`, `units`, `lessons`, `questions`, `question_answers`, `unit_totals`).
+4. اختبار مسار كامل: تسجيل، انضمام، مرحلة، تقييم ذاتي، إجابة نموذجية، مرحلة تالية، ترتيب، شهادة.
+5. تفعيل GitHub Pages من **Settings → Pages** (Source: main / docs):
+   <https://github.com/bakaloria/bakaloriastages/settings/pages>
+   ثم أضف `bakaloria.github.io` إلى **Authentication → Settings → Authorized domains**.
+6. (اختياري) تفعيل App Check بعد تسجيل reCAPTCHA v3.
+7. (اختياري) الترقية إلى Blaze ووضع Functions للتصحيح الخادمي.
 8. إضافة الامتحان النهائي ولوحة تحكم المشرف لاحقًا.

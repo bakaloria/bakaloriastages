@@ -15,13 +15,20 @@ import {
 } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 import { api } from "../lib/api";
-import { auth, db, isFirebaseConfigured, STUDENT_EMAIL_DOMAIN } from "../lib/firebase";
+import {
+  auth,
+  backendMode,
+  db,
+  isFirebaseConfigured,
+  STUDENT_EMAIL_DOMAIN,
+} from "../lib/firebase";
 import type { Branch, Profile, RegisterInput } from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
   loading: boolean;
+  registering: boolean;
   configured: boolean;
   login: (username: string, password: string) => Promise<void>;
   register: (input: RegisterInput) => Promise<void>;
@@ -47,6 +54,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(Boolean(auth));
+  const [registering, setRegistering] = useState(false);
 
   useEffect(() => {
     if (!auth) {
@@ -80,7 +88,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setLoading(false);
       },
       () => {
-        setProfile(null);
+        // Keep any profile we already have (for example the optimistic profile
+        // set right after registration). A transient listener error should not
+        // turn a valid session into the "incomplete profile" screen.
         setLoading(false);
       },
     );
@@ -95,8 +105,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(async (input: RegisterInput) => {
     if (!auth) throw new Error("FIREBASE_NOT_CONFIGURED");
-    const result = await api.register(input);
-    await signInWithEmailAndPassword(auth, result.email, input.password);
+    setRegistering(true);
+    try {
+      const result = await api.register(input);
+      // Spark registration signs the new user in inside api.register so the
+      // Firestore transaction can create the profile. Callable mode creates
+      // the account server-side and needs an explicit client sign-in.
+      if (backendMode === "functions") {
+        await signInWithEmailAndPassword(auth, result.email, input.password);
+      }
+      // Set the profile from the just-validated form values so the UI does not
+      // flash the "incomplete profile" screen while Firestore delivers the
+      // first snapshot of the new user document.
+      const username = input.username.trim();
+      setProfile({
+        uid: result.uid,
+        username,
+        usernameLower: username.toLowerCase(),
+        displayName: input.displayName.trim() || username,
+        branch: input.branch,
+        role: "student",
+      });
+    } finally {
+      setRegistering(false);
+    }
   }, []);
 
   const logout = useCallback(async () => {
@@ -109,12 +141,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       profile,
       loading,
+      registering,
       configured: isFirebaseConfigured,
       login,
       register,
       logout,
     }),
-    [user, profile, loading, login, register, logout],
+    [user, profile, loading, registering, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,12 +1,14 @@
 # مقترح تطبيق «مراحل البكالوريا» — bakaloriastages
 
+> **ملاحظة تنفيذية:** هذا مستند تصميم تاريخي. التطبيق الفعلي مبني على **Firebase فقط** (Auth + Firestore)، ويعمل افتراضيًا بوضع **Spark** المجاني مع تصحيح داخل الواجهة، مع وضع **Functions** اختياري بعد الترقية إلى Blaze. راجع `README.md` و`FIREBASE-SETUP-ar.md` للحالة المنفّذة.
+
 > **تحديث مهم (آخر قرار):** تم تثبيت **سقف أسئلة المرحلة في إعدادات المدير**، وأصبح شرط ختم المادة هو **الإجابة عن كل أسئلة المادة دون استثناء**، مع **عرض الإجابة النموذجية بعد كل سؤال** ليحفظها الطالب. لذلك لم يعد نموذج «سؤال جديد واحد + مراجعة» كافياً لتغطية البنك كاملاً؛ النموذج المعتمد الآن هو **3 أسئلة جديدة + سؤالان مراجعة داخل كل مرحلة، ضمن جلسات، ثم فاصل زمني**. التفاصيل الكاملة في **القسم 16** وملف `COVERAGE-PLAN-ar.md`.
 
 ## 1. الخلاصة
 
 تطبيق ويب/PWA عربي (RTL) للطلاب، يقوم على فكرة **رحلة مراحل** بدل فكرة «الاختبار بكود»:
 
-- الطالب ينشئ **حساباً باسم مستخدم وكلمة مرور** (Supabase)، ويختار فرعه/مادته، ويحفظ تقدمه ليعود إليه من أي جهاز.
+- الطالب ينشئ **حساباً باسم مستخدم وكلمة مرور** (Firebase)، ويختار فرعه/مادته، ويحفظ تقدمه ليعود إليه من أي جهاز.
 - المنهاج مقسّم إلى **وحدات ← دروس ← أسئلة**، وكل مرحلة تعرض مجموعة أسئلة من البنك (3 جديدة + 2 مراجعة افتراضياً).
 - بعد كل سؤال تظهر **الإجابة النموذجية** والشرح، ويعود السؤال لاحقاً في المراجعة حتى يثبت.
 - لا يُختم المنهاج إلا بعد **ظهور كل سؤال في المادة والإجابة عنه**، ثم اجتياز الامتحان الختامي.
@@ -55,14 +57,14 @@
 
 ## 4. الحساب والدخول
 
-بعد قرار الاعتماد على Supabase، أصبح الحساب مطلباً أساسياً:
+بعد قرار الاعتماد على Firebase، أصبح الحساب مطلباً أساسياً:
 
 - شاشة الدخول: **اسم مستخدم + كلمة مرور**، مع زر «حساب جديد».
 - لا يوجد «كود اختبار» ولا مجموعات ولا شاشات معلم للطالب.
-- التقدم والمحاولات تُحفظ في Supabase، وتُستعاد من أي جهاز.
+- التقدم والمحاولات تُحفظ في Firebase، وتُستعاد من أي جهاز.
 - يمكن إضافة **وضع تجربة محلي** (بدون حساب) لدرس واحد، لكن التقدم الدائم يحتاج حساباً.
 - **لوحة الإدارة تبقى محمية** بدور `admin` ولا تظهر للطالب.
-- اسم المستخدم يُحوَّل داخلياً إلى بريد صناعي، وSupabase Auth يتولى تشفير كلمة المرور.
+- اسم المستخدم يُحوَّل داخلياً إلى بريد صناعي، وFirebase Auth يتولى تشفير كلمة المرور.
 
 **مقايضة:** الحساب يحل مشكلة تغيير الجهاز، لكنه يضيف خطوة تسجيل. لذلك نجعل التسجيل سريعاً (اسم مستخدم + كلمة مرور فقط)، ونسمح بالدخول التلقائي بعد أول مرة.
 
@@ -339,14 +341,14 @@
 
 ---
 
-## 14. النموذج المحدّث: حساب + سباق تراكمي + Supabase
+## 14. النموذج المحدّث: حساب + سباق تراكمي + Firebase
 
-هذا القسم يعالج المقترح الجديد: حساب باسم/كلمة مرور، حفظ التقدم في Supabase، اختيار الفرع، ثم سباق يبدأ بسؤال واحد ويتوسع تدريجياً حتى ختم المادة.
+هذا القسم يعالج المقترح الجديد: حساب باسم/كلمة مرور، حفظ التقدم في Firebase، اختيار الفرع، ثم سباق يبدأ بسؤال واحد ويتوسع تدريجياً حتى ختم المادة.
 
 ### 14.1 ملخص المقترح الجديد
 
 - حساب طالب باسم مستخدم وكلمة مرور.
-- Supabase Auth + PostgreSQL لحفظ الحساب والتقدم والمحاولات.
+- Firebase Auth + Firestore لحفظ الحساب والتقدم والمحاولات.
 - اختيار الفرع (علمي/أدبي) ← عرض المواد.
 - كل مادة مسابقة مستقلة.
 - المرحلة الأولى: سؤال واحد من الدرس الأول.
@@ -436,16 +438,16 @@
   - مشاهدة لوحة المتصدرين.
 - أرسل إشعاراً عند جاهزية المرحلة (PWA / بريد اختياري).
 
-### 14.7 الحساب والمصادقة في Supabase
+### 14.7 الحساب والمصادقة في Firebase
 
-Supabase لا يدعم “اسم مستخدم + كلمة مرور” مباشرة؛ الحل الاحترافي:
+Firebase لا يدعم “اسم مستخدم + كلمة مرور” مباشرة؛ الحل الاحترافي:
 
 - الطالب يدخل **اسم مستخدم + كلمة مرور**.
 - التطبيق يحوّل اسم المستخدم داخلياً إلى بريد صناعي:
   `username@students.bakaloriastages.app`
-- Supabase Auth يتولى تشفير كلمة المرور والجلسات والحد من المحاولات.
+- Firebase Auth يتولى تشفير كلمة المرور والجلسات والحد من المحاولات.
 - جدول `profiles` يحفظ الاسم الظاهر والفرع والدور.
-- **لا تخزّن كلمة المرور أبداً** في جدول خاص؛ Supabase يشفّرها.
+- **لا تخزّن كلمة المرور أبداً** في جدول خاص؛ Firebase يشفّرها.
 - أضف بريداً اختيارياً للاستعادة، أو اسمح للمدير بإعادة تعيين كلمة المرور.
 - فعّل CAPTCHA (Turnstile/hCaptcha) على التسجيل والدخول.
 - اسم المستخدم فريد، بأحرف لاتينية/أرقام، والاسم الظاهر يمكن أن يكون عربياً.
@@ -459,78 +461,57 @@ Supabase لا يدعم “اسم مستخدم + كلمة مرور” مباشر�
 
 ### 14.8 نموذج البيانات المقترح
 
-```sql
-profiles (
-  id uuid primary key references auth.users,
-  username text unique not null,
-  display_name text not null,
-  branch text check (branch in ('scientific','literary')),
-  role text default 'student',
-  created_at timestamptz default now()
-)
+```text
+users/{uid}
+  username, usernameLower, displayName, branch, role, createdAt
 
-subjects (id, slug, name, branches text[], icon, sort, active)
-units (id, subject_id, title, sort)
-lessons (id, unit_id, title, sort)
-questions (
-  id, lesson_id, type, text, options jsonb,
-  correct jsonb,              -- يُستخدم للتصحيح على الخادم فقط
-  model_answer jsonb,         -- ما يُعرض للطالب بعد التسليم (نص/خيار/ترتيب)
-  explanation text,
-  grading text check (grading in ('auto','self','manual')),
-  difficulty, points, active
-)
+usernames/{usernameLower}
+  uid, username, createdAt
 
-enrollments (
-  id, user_id, subject_id,
-  current_lesson int, status text,
-  points int, streak int,
-  total_questions int,        -- لقطة وقت الانضمام
-  coverage_count int default 0,
-  mastery_count int default 0,
-  stages_in_session int default 0,
-  next_available_at timestamptz,
-  started_at, completed_at, mastery_completed_at,
-  unique(user_id, subject_id)
-)
+subjects/{subjectId}
+  name, slug, branches, icon, sort, active
 
-stage_attempts (
-  id, enrollment_id, stage_no, attempt_no,
-  session_no int,
-  stage_in_session int,
-  started_at, submitted_at, score, passed,
-  unique(enrollment_id, stage_no, attempt_no)
-)
+units/{unitId}
+  subjectId, title, sort
 
-attempt_answers (
-  id, attempt_id, question_id, answer jsonb,
-  is_correct boolean,
-  self_score text check (self_score in ('correct','partial','wrong')),
-  time_ms int, is_review boolean,
-  feedback_seen_at timestamptz
-)
+lessons/{lessonId}
+  subjectId, unitId, title, sort
 
-question_progress (
-  id, user_id, enrollment_id, question_id,
-  seen_count int default 0,
-  correct_count int default 0,
-  wrong_count int default 0,
-  first_attempt_correct boolean,
-  mastery_level int default 0,   -- 0..3
-  last_seen_at timestamptz,
-  next_review_at timestamptz,
-  unique(user_id, question_id)
-)
+questions/{questionId}
+  subjectId, unitId, lessonId, type, text, options, orderIndex, active
 
-review_queue (
-  id, enrollment_id, question_id,
-  due_at timestamptz, correct_streak int,
-  interval_idx int
-)
+question_answers/{questionId}
+  grading, correct, modelAnswer, explanation
 
-settings (
-  key text primary key, value jsonb
-)
+enrollments/{uid_subjectId}
+  userId, subjectId, displayName, totalQuestions, masteryTarget,
+  coverageCount, masteryCount, autoFirstCorrect, sessionStages,
+  stagesCompleted, stagesInSession, sessionNo, nextQuestionIndex,
+  nextAvailableAt, startedAt, completedAt, masteryCompletedAt
+
+stage_attempts/{uid_subjectId_stageNo}
+  userId, subjectId, stageNo, sessionNo, stageInSession, status,
+  items, answers, score, startedAt, submittedAt, feedbackSeenAt
+
+progress/{uid_questionId}
+  userId, enrollmentId, subjectId, questionId, unitId, orderIndex,
+  seenCount, correctCount, wrongCount, firstAttemptCorrect, mastered,
+  pendingSelfGrade, selfScore, isCorrect, masteryLevel,
+  lastSeenAt, nextReviewAt
+
+unit_progress/{uid_subjectId_unitId}
+  userId, subjectId, unitId, title, total, seen, mastered
+
+unit_totals/{subjectId_unitId}
+  subjectId, unitId, title, total
+
+subject_settings/{subjectId}
+  stageSize, newPerStage, reviewPerStage, sessionStages,
+  intervalMinutes, masteryThreshold, finalExamRequired
+
+certificates/{uid_subjectId}
+  userId, subjectId, displayName, coverageCount, masteryCount,
+  totalQuestions, code, issuedAt
 ```
 
 ### 14.9 أمان الإجابات: لا ترسل الإجابة الصحيحة إلى المتصفح
@@ -538,11 +519,11 @@ settings (
 هذه أخطر نقطة في أي مسابقة. إذا حمّل المتصفح الأسئلة مع `correct`، يستطيع أي طالب رؤية الإجابات.
 
 الحل:
-- RPC آمن `start_stage(enrollment_id)` يعيد الأسئلة **بدون** `correct` و**بدون** `model_answer`.
-- RPC `submit_stage(attempt_id, answers)` يتحقق من الإجابات على الخادم، ويحسب النتيجة، ويحدّث التقدم، **ثم يعيد `model_answer` والشرح** فقط بعد التسليم.
+- Callable آمن `start_stage(enrollment_id)` يعيد الأسئلة **بدون** `correct` و**بدون** `model_answer`.
+- Callable `submit_stage(attempt_id, answers)` يتحقق من الإجابات على الخادم، ويحسب النتيجة، ويحدّث التقدم، **ثم يعيد `model_answer` والشرح** فقط بعد التسليم.
 - `self_score` يُقبل فقط للأسئلة ذات `grading = 'self'`، ولا يُقبل للأسئلة الآلية.
 - لا تسمح للعميل بكتابة `attempt_answers` أو `question_progress` مباشرة.
-- استخدم `security definer` مع التحقق من `auth.uid()`.
+- استخدم `Admin SDK` مع التحقق من `request.auth.uid`.
 - خزّن `next_available_at` على الخادم، وارفض بدء المرحلة قبل موعدها.
 - استخدم وقت الخادم (UTC) وليس وقت الجهاز.
 - اخلط ترتيب الخيارات في الاستجابة، واضبط الفهرس على الخادم.
@@ -610,14 +591,14 @@ settings (
 ### 14.14 خطة MVP المقترحة
 
 **المرحلة 1 (أسبوع 1):**
-- Supabase Auth (اسم مستخدم/كلمة مرور).
+- Firebase Auth (اسم مستخدم/كلمة مرور).
 - جداول المحتوى واستيراد بنك المادة التجريبية.
 - اختيار الفرع والمواد.
 - محرك المرحلة: **3 جديدة + 2 مراجعة**، وسقف قابل للضبط.
 - تتبّع `question_progress` (ظهور/صحة/موعد المراجعة).
 - عرض **الإجابة النموذجية** بعد كل سؤال + زر «راجعت الإجابة».
 - جلسات (10 مراحل) + مؤقت الخادم + حفظ التقدم.
-- RPC آمنة للأسئلة والإجابات.
+- Callable آمنة للأسئلة والإجابات.
 
 **المرحلة 2 (أسبوع 2):**
 - شاشة التغطية والإتقان (لكل درس/وحدة/مادة).
@@ -633,7 +614,7 @@ settings (
 - التحليلات.
 - اختبار ميداني مع 20–30 طالباً.
 - تحسين الصعوبة والإيقاع.
-- نشر GitHub Pages + Supabase.
+- نشر GitHub Pages + Firebase.
 
 **عينة أولى:** 
 - **الأحياء — الوحدة 1** (لأن 90% من أسئلتها آلية، أسرع للتحقق التقني).
@@ -651,7 +632,7 @@ settings (
 
 ### 14.16 التوصية النهائية
 
-فكرتك قوية في جوهرها: **حساب + رحلة تراكمية + فاصل زمني + Supabase**. لكن بعد شرط «كل الأسئلة» أصبح التراكم الحرفي (سؤال جديد واحد + كل السابقين) مستحيلاً عملياً؛ لأنه يغطي سؤالاً واحداً جديداً فقط في كل مرحلة. لذلك أنصح بـ:
+فكرتك قوية في جوهرها: **حساب + رحلة تراكمية + فاصل زمني + Firebase**. لكن بعد شرط «كل الأسئلة» أصبح التراكم الحرفي (سؤال جديد واحد + كل السابقين) مستحيلاً عملياً؛ لأنه يغطي سؤالاً واحداً جديداً فقط في كل مرحلة. لذلك أنصح بـ:
 
 > **مرحلة = 5 أسئلة (3 جديدة + 2 مراجعة)، وجلسة = 10 مراحل (50 سؤالاً)، ثم فاصل ساعتين. الختم = تغطية 100% لكل الأسئلة + إتقان 100% (صحيح مرة على الأقل) + امتحان ختامي. الإجابة النموذجية تظهر بعد كل سؤال، والسؤال يعود للمراجعة حتى يثبت.**
 
@@ -671,8 +652,8 @@ settings (
 
 | # | ما طلبته | كيف عالجه المقترح | القسم |
 |---:|---|---|---|
-| 1 | حساب باسم وكلمة مرور لحفظ التقدم | Supabase Auth باسم مستخدم + كلمة مرور، مع بريد صناعي داخلي واستعادة اختيارية | 14.7 |
-| 2 | حفظ البيانات في Supabase | جداول `profiles` و`enrollments` و`stage_attempts` و`attempt_answers` و`question_progress` و`review_queue` | 14.8 |
+| 1 | حساب باسم وكلمة مرور لحفظ التقدم | Firebase Auth باسم مستخدم + كلمة مرور، مع بريد صناعي داخلي واستعادة اختيارية | 14.7 |
+| 2 | حفظ البيانات في Firebase | جداول `profiles` و`enrollments` و`stage_attempts` و`attempt_answers` و`question_progress` و`review_queue` | 14.8 |
 | 3 | اختيار الفرع ثم ظهور مواد العلمي | فرع علمي/أدبي، وكل مادة تُعرض حسب الفرع مع إمكانية الانضمام للكل | 14.10 |
 | 4 | بدء المسابقة من الدرس الأول | المرحلة 1 = 3 أسئلة جديدة من الدرس الأول (لا مراجعة بعد) | 16.3 |
 | 5 | الانتقال بعد فترة يحددها المدير (مثلاً ساعتان) | `next_available_at` على الخادم + إعداد للمدير، ويُطبّق **بين الجلسات** افتراضياً | 14.6 و16.3 |
@@ -714,13 +695,13 @@ settings (
 | الخطر | الأثر | التخفيف |
 |---|---|---|
 | نسيان كلمة المرور | فقدان الحساب | بريد استعادة اختياري أو إعادة تعيين من المدير |
-| كشف الإجابات في المتصفح | غش | RPC آمنة، وعدم إرسال `correct` أو `model_answer` قبل التسليم |
+| كشف الإجابات في المتصفح | غش | Callable آمنة، وعدم إرسال `correct` أو `model_answer` قبل التسليم |
 | الانتظار الطويل | انسحاب الطالب | جلسات 50 سؤالاً + مراجعة/تدريب/مادة أخرى أثناء الانتظار + إشعارات |
 | طول رحلة الختم الكامل | إرهاق/انسحاب | جلسات 20–30 دقيقة + سقف قابل للضبط + فصل مسار المسابقة |
 | تقييم ذاتي غير أمين | تشويه الترتيب | احتساب الأسئلة الذاتية في التغطية فقط، والترتيب للآلي + الختامي |
 | غياب شرح لمعظم الأسئلة | قيمة تعليمية أقل | الإجابة النموذجية متاحة؛ نضيف شرحاً تدريجياً للأسئلة الآلية |
 | بدء متأخر في الموسم | ظلم في الترتيب | ترتيب بالنقاط/الدقة أو احتساب الزمن من أول مرحلة |
-| توقف Supabase المجاني | توقف الخدمة | إبقاء المشروع نشطاً أو خطة مدفوعة عند الإطلاق |
+| توقف Firebase المجاني | توقف الخدمة | إبقاء المشروع نشطاً أو خطة مدفوعة عند الإطلاق |
 | غياب الرياضيات/العربية | منهاج غير مكتمل | عرضهما «قريباً» وعدم الإيحاء بالاكتمال |
 
 ### 15.5 الخلاصة التنفيذية
@@ -892,69 +873,52 @@ settings (
 | `leaderboard_mode` | auto_only | auto_only/all | عدالة الترتيب |
 | `season_start` / `season_end` | — | — | الموسم |
 
-### 16.9 تعديلات قاعدة البيانات المطلوبة
+### 16.9 تعديلات Firestore المطلوبة
 
-أضف إلى الجداول السابقة:
+أضف الحقول التالية إلى مجموعات Firestore السابقة:
 
-```sql
--- الأسئلة: فصل النموذج عن التصحيح
-questions (
-  ...
-  correct jsonb,          -- للتصحيح فقط
-  model_answer jsonb,     -- للعرض بعد التسليم
-  grading text check (grading in ('auto','self','manual')),
-  explanation text
-)
+```text
+questions/{questionId}
+  + orderIndex          // ترتيب السؤال داخل المادة
+  + active              // إظهار/إخفاء
 
--- تقدم كل سؤال لكل طالب
-question_progress (
-  user_id uuid references auth.users,
-  enrollment_id uuid references enrollments,
-  question_id uuid references questions,
-  seen_count int default 0,
-  correct_count int default 0,
-  wrong_count int default 0,
-  first_attempt_correct boolean,
-  mastery_level int default 0,
-  last_seen_at timestamptz,
-  next_review_at timestamptz,
-  primary key (user_id, question_id)
-)
+progress/{uid_questionId}
+  seenCount, correctCount, wrongCount, firstAttemptCorrect,
+  mastered, pendingSelfGrade, selfScore, isCorrect, masteryLevel,
+  lastSeenAt, nextReviewAt
 
--- عدّادات الختم على مستوى الانضمام
-enrollments (
-  ...
-  total_questions int,
-  coverage_count int default 0,
-  mastery_count int default 0,
-  stages_in_session int default 0,
-  next_available_at timestamptz,
-  completed_at timestamptz,
-  mastery_completed_at timestamptz
-)
+enrollments/{uid_subjectId}
+  totalQuestions, coverageCount, masteryCount, stagesInSession,
+  nextAvailableAt, completedAt, masteryCompletedAt
 
--- الإجابات: تقييم ذاتي + تأكيد الاطلاع
-attempt_answers (
-  ...
-  is_correct boolean,
-  self_score text check (self_score in ('correct','partial','wrong')),
-  feedback_seen_at timestamptz
-)
+stage_attempts/{uid_subjectId_stageNo}
+  answers[] { questionId, answer, selfScore, isCorrect, grading,
+              modelAnswer, explanation, timeMs }
+  feedbackSeenAt
 ```
 
-**فهرس مطلوب:**
-- `question_progress (enrollment_id, next_review_at)`.
-- `question_progress (enrollment_id, mastery_level)`.
-- `attempt_answers (attempt_id)`.
-- `questions (lesson_id, active)`.
+**فهارس مركبة مطلوبة:**
 
-### 16.10 RPC المطلوبة
+- `questions`: `subjectId + active + orderIndex`.
+- `progress`: `userId + subjectId + nextReviewAt`.
+- `stage_attempts`: `userId + subjectId + status + startedAt`.
+- `stage_attempts`: `userId + subjectId + status + submittedAt`.
+- `enrollments`: `subjectId + autoFirstCorrect + masteryCount + coverageCount`.
+- `unit_progress`: `userId + subjectId`.
+- `subjects`: `branches array-contains + active + sort`.
+- `units`: `subjectId + sort`.
+- `final_exam_attempts`: `userId + subjectId + passed`.
 
-1. **`start_stage(p_subject_id)`**
+### 16.10 العمليات المطلوبة
+
+> في وضع **Spark** تنفّذ هذه العمليات في `app/src/lib/spark.ts` عبر Firestore
+> مباشرة. في وضع **Functions** تنفّذها Cloud Functions بـ Admin SDK.
+
+1. **`startStage(subjectId)`**
    - يتحقق من الحساب والانضمام والانتظار.
    - يختار 3 جديدة + 2 مراجعة.
-   - ينشئ `stage_attempt` مع `session_no` و`stage_in_session`.
-   - يعيد الأسئلة بدون `correct` وبدون `model_answer`.
+   - ينشئ `stage_attempt` مع `sessionNo` و`stageInSession`.
+   - يعيد الأسئلة بدون `correct` وبدون `modelAnswer` (في وضع Functions).
 
 2. **`submit_stage(p_attempt_id, p_answers)`**
    - يصحّح الآلي على الخادم.
@@ -1010,7 +974,7 @@ attempt_answers (
 ### 16.13 خطة التنفيذ المعدلة
 
 **الأسبوع 1 — نواة الختم:**
-- Supabase Auth + الملف الشخصي.
+- Firebase Auth + الملف الشخصي.
 - استيراد مادة واحدة (الأحياء للتقنية، أو التاريخ للأدبي).
 - الجداول: `questions`, `enrollments`, `stage_attempts`, `attempt_answers`, `question_progress`.
 - محرك 3+2، وجلسات 10 مراحل.
@@ -1029,7 +993,7 @@ attempt_answers (
 - الإشعارات.
 - تحليلات.
 - اختبار 20–30 طالباً.
-- نشر GitHub Pages + Supabase.
+- نشر GitHub Pages + Firebase.
 
 **العينة الأولى:**
 - **الأحياء — الوحدة 1**: 90% آلي، أسرع للتحقق.

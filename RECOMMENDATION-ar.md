@@ -141,7 +141,7 @@
 
 ---
 
-## 9. البيانات المطلوبة في Supabase
+## 9. البيانات المطلوبة في Firebase
 
 ```text
 profiles
@@ -160,7 +160,7 @@ question_progress
 settings
 ```
 
-### RPC آمنة
+### عمليات آمنة
 
 - `start_stage`: يعيد الأسئلة **بدون** `correct` و**بدون** `model_answer`.
 - `submit_stage`: يصحّح، يحدّث التقدم، ثم يعيد `model_answer` والشرح.
@@ -221,7 +221,7 @@ settings
 - لوحة المتصدرين (آلية).
 - الإشعارات.
 - اختبار 20–30 طالباً.
-- النشر على GitHub Pages + Supabase.
+- النشر على GitHub Pages + Firebase.
 
 **العينة الأولى:**
 - الأحياء — الوحدة 1 (90% آلي).

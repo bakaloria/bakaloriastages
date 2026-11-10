@@ -16,7 +16,7 @@ import type { Branch } from "../lib/types";
 type Mode = "login" | "register";
 
 export function LoginPage() {
-  const { user, profile, loading, login, register, logout } = useAuth();
+  const { user, profile, loading, registering, login, register, logout } = useAuth();
   const [mode, setMode] = useState<Mode>("login");
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -26,6 +26,9 @@ export function LoginPage() {
   const [busy, setBusy] = useState(false);
 
   if (loading) return <FullScreenLoader label="نفتح لك مراحل البكالوريا..." />;
+  if (user && !profile && registering) {
+    return <FullScreenLoader label="نجهّز حسابك..." />;
+  }
   if (user && profile) return <Navigate to="/" replace />;
   if (user && !profile) {
     return (

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { BrandMark } from "../components/Layout";
 import { CheckIcon, SparklesIcon } from "../components/Icons";
-import { appCheckSiteKey, firebaseConfig } from "../lib/firebase";
+import { appCheckSiteKey, backendMode, firebaseConfig } from "../lib/firebase";
 
 const REQUIRED = ["apiKey", "authDomain", "projectId", "appId"] as const;
 
@@ -16,6 +16,7 @@ export function SetupPage() {
           storageBucket: firebaseConfig.storageBucket || "bakaloriarace.firebasestorage.app",
           messagingSenderId: firebaseConfig.messagingSenderId || "",
           appId: firebaseConfig.appId || "",
+          backendMode,
           appCheckSiteKey: appCheckSiteKey || "",
         },
         null,
@@ -101,7 +102,12 @@ export function SetupPage() {
         <ul className="check-list">
           <li><CheckIcon /> Authentication → Email/Password مفعّل.</li>
           <li><CheckIcon /> Firestore Database منشأ.</li>
-          <li><CheckIcon /> Cloud Functions منشورة.</li>
+          <li><CheckIcon /> قواعد Firestore منشورة.</li>
+          {backendMode === "functions" ? (
+            <li><CheckIcon /> Cloud Functions منشورة (خطة Blaze).</li>
+          ) : (
+            <li><CheckIcon /> وضع Spark المجاني: لا يحتاج Cloud Functions.</li>
+          )}
         </ul>
       </div>
     </div>

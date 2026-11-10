@@ -1,5 +1,6 @@
 const MESSAGES: Record<string, string> = {
   FIREBASE_NOT_CONFIGURED: "لم يتم إعداد Firebase بعد. أضف إعدادات المشروع أولًا.",
+  AUTH_REQUIRED: "جلستك انتهت. سجّل الدخول من جديد.",
   "auth/invalid-credential": "اسم المستخدم أو كلمة المرور غير صحيحة.",
   "auth/user-not-found": "اسم المستخدم أو كلمة المرور غير صحيحة.",
   "auth/wrong-password": "اسم المستخدم أو كلمة المرور غير صحيحة.",

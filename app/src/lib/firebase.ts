@@ -4,8 +4,11 @@ import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
 import { getFunctions, type Functions } from "firebase/functions";
 
+export type BackendMode = "spark" | "functions";
+
 type RuntimeConfig = Partial<FirebaseOptions> & {
   appCheckSiteKey?: string;
+  backendMode?: BackendMode;
 };
 
 declare global {
@@ -36,7 +39,7 @@ const envConfig: RuntimeConfig = {
 // The deployed config is canonical, then Vite env values, then a value saved
 // from the setup screen. Empty strings never shadow a real value.
 const pick = (key: keyof RuntimeConfig): string => {
-  for (const source of [envConfig, runtimeConfig, savedConfig]) {
+  for (const source of [runtimeConfig, envConfig, savedConfig]) {
     const value = source[key];
     if (typeof value === "string" && value.trim()) return value.trim();
   }
@@ -53,6 +56,20 @@ export const firebaseConfig: FirebaseOptions = {
 };
 
 export const appCheckSiteKey = pick("appCheckSiteKey");
+
+// "spark" keeps the whole app on Firebase's free plan: grading and progress
+// updates run in the browser against Firestore. "functions" switches back to
+// the hardened Cloud Functions backend once the project is on Blaze.
+export const backendMode: BackendMode = (() => {
+  for (const source of [runtimeConfig, envConfig, savedConfig]) {
+    if (source.backendMode === "functions" || source.backendMode === "spark") {
+      return source.backendMode;
+    }
+  }
+  return "spark";
+})();
+
+export const isSparkMode = backendMode === "spark";
 
 export const isFirebaseConfigured = Boolean(
   firebaseConfig.apiKey && firebaseConfig.projectId && firebaseConfig.authDomain && firebaseConfig.appId,

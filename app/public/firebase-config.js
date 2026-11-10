@@ -10,6 +10,9 @@ window.__FIREBASE_CONFIG__ = {
   storageBucket: "bakaloriarace.firebasestorage.app",
   messagingSenderId: "742034573228",
   appId: "1:742034573228:web:1378a7717b227ef10c5c09",
+  // "spark" = الخطة المجانية (التصحيح داخل التطبيق).
+  // بدّلها إلى "functions" بعد ترقية المشروع إلى Blaze ونشر Cloud Functions.
+  backendMode: "spark",
   // اختياري: مفتاح reCAPTCHA v3 من Firebase App Check.
   // اتركه فارغًا حتى تُسجّل تطبيق الويب وتفعّل App Check.
   appCheckSiteKey: ""

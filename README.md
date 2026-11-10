@@ -126,6 +126,8 @@ GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json
 - الأسئلة ذاتية التقييم تستخدم `"grading": "self"` مع `modelAnswer.text`.
 - الأسئلة الآلية تدعم `mcq` و`true_false` و`fill_blank` و`matching` و`ordering`.
 - الاستيراد يستخدم `merge` ولا يحذف ما ليس في الملف.
+- استخدم الملف الكامل للمادة في كل مرة، لأن `totalQuestions` يُحسب من الملف
+  المعطى وليس من مجموع الأسئلة الموجود مسبقًا في Firestore.
 
 ## النشر على GitHub Pages
 

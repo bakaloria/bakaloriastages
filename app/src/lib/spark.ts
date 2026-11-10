@@ -716,33 +716,56 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
 
   const enrollmentRef = doc(firestore, "enrollments", enrollmentId(uid, subjectId));
 
-  await runTransaction(firestore, async (tx) => {
-    const current = await tx.get(enrollmentRef);
-    if (!current.exists()) throw appError("ENROLLMENT_NOT_FOUND", "not-found");
-    const enrollmentData = current.data();
-    const currentStageNo = Number(enrollmentData.stagesCompleted ?? 0) + 1;
-    if (currentStageNo !== stageNo) throw appError("STAGE_RACE", "aborted");
+  try {
+    await runTransaction(firestore, async (tx) => {
+      const current = await tx.get(enrollmentRef);
+      if (!current.exists()) throw appError("ENROLLMENT_NOT_FOUND", "not-found");
+      const enrollmentData = current.data();
+      const currentStageNo = Number(enrollmentData.stagesCompleted ?? 0) + 1;
+      if (currentStageNo !== stageNo) throw appError("STAGE_RACE", "aborted");
 
-    tx.set(attemptRef, {
-      userId: uid,
-      subjectId,
-      stageNo,
-      sessionNo,
-      stageInSession,
-      status: "in_progress",
-      items: selected.map((question, index) => ({
-        questionId: question.id,
-        position: index + 1,
-        isReview: question.isReview,
-      })),
-      startedAt: serverTimestamp(),
-      submittedAt: null,
-      feedbackSeenAt: null,
-      answers: [],
-      score: null,
+      // A second tab may have created the same stage after the pre-check above.
+      // Never overwrite its questions or reset its timer.
+      const currentAttempt = await tx.get(attemptRef);
+      if (currentAttempt.exists()) throw appError("STAGE_RACE", "aborted");
+
+      tx.set(attemptRef, {
+        userId: uid,
+        subjectId,
+        stageNo,
+        sessionNo,
+        stageInSession,
+        status: "in_progress",
+        items: selected.map((question, index) => ({
+          questionId: question.id,
+          position: index + 1,
+          isReview: question.isReview,
+        })),
+        startedAt: serverTimestamp(),
+        submittedAt: null,
+        feedbackSeenAt: null,
+        answers: [],
+        score: null,
+      });
+      tx.update(enrollmentRef, { nextQuestionIndex });
     });
-    tx.update(enrollmentRef, { nextQuestionIndex });
-  });
+  } catch (error) {
+    if ((error as { code?: string }).code === "aborted") {
+      const raced = await getDoc(attemptRef);
+      if (raced.exists()) {
+        const attempt = raced.data();
+        if (attempt.status === "submitted") {
+          return {
+            attemptId,
+            alreadySubmitted: true,
+            feedbackSeen: Boolean(attempt.feedbackSeenAt),
+          };
+        }
+        return buildStagePayload(attemptId, attempt, settings, true);
+      }
+    }
+    throw error;
+  }
 
   const created = await getDoc(attemptRef);
   return buildStagePayload(attemptId, created.data() ?? {}, settings, false);

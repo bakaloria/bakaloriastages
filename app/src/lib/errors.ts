@@ -32,6 +32,7 @@ const MESSAGES: Record<string, string> = {
   ATTEMPT_ALREADY_SUBMITTED: "تم تسليم هذه المرحلة بالفعل.",
   ATTEMPT_NOT_SUBMITTED: "لم يتم تسليم هذه المرحلة بعد.",
   ATTEMPT_EMPTY: "المرحلة لا تحتوي على أسئلة.",
+  STAGE_RACE: "بدأت المرحلة في نافذة أخرى. أعد المحاولة.",
   QUESTION_NOT_FOUND: "تعذر تحميل أحد الأسئلة.",
   SELF_GRADE_REQUIRED: "قيّم إجاباتك الذاتية أولًا قبل المتابعة.",
   SELF_GRADE_NOT_PENDING: "تم تقييم هذا السؤال بالفعل.",

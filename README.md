@@ -45,14 +45,19 @@
 
 تتيح اللوحة:
 
-- إغلاق بدء المراحل لكل الطلاب (`settings/global.stagesLocked`) مع رسالة مخصصة.
+- إغلاق بدء المراحل لكل الطلاب (`settings/global.stagesLocked`) مع رسالة مخصصة،
+  وتنبيه عام اختياري (`maintenanceMessage`) يظهر أعلى الرئيسية.
 - إغلاق مرحلة مادة محددة أو إغلاق مادة كاملة (`subject_settings/{subjectId}.stagesLocked`).
 - إيقاف التسجيل مؤقتًا، ونشر إعلانات في الرئيسية ومركز الإشعارات.
 - ضبط `newPerStage` و`reviewPerStage` لكل مرحلة، وخطة الطالب الذي لم يتجاوز المرحلة
   (`failedNewPerStage` و`failedReviewPerStage`) وحد النجاح `passThreshold`.
-- التحكم في طول الجلسة (`sessionStages`)، فواصل المراجعة (`intervalMinutes`)،
-  عودة السؤال الخاطئ (`wrongIntervalMinutes`)، ونسبة الإتقان.
+- التحكم في طول الجلسة (`sessionStages`)، الفاصل بين الجلسات (`intervalMinutes`)،
+  فاصل اختياري بين المراحل (`stageIntervalMinutes`)، عودة السؤال الخاطئ
+  (`wrongIntervalMinutes`)، ونسبة الإتقان.
 - منح دور مشرف لطالب أو سحبه، والاطلاع على آخر إجراءات الإدارة في `admin_audit`.
+- تغيير اسم المستخدم وكلمة المرور من تبويب أمان الحساب. يُحدَّث حجز الاسم
+  (`usernames/{username}`) ويبقى بريد Firebase الداخلي ثابتًا، لأن Firebase
+  يطلب التحقق من أي بريد جديد قبل تغييره وهذه العناوين لا تملك صندوق وارد.
 
 ## البنية
 

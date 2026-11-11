@@ -562,6 +562,7 @@ async function register(input: RegisterInput) {
       tx.set(usernameRef, {
         uid: user.uid,
         username: usernameLower,
+        email,
         createdAt: serverTimestamp(),
       });
       tx.set(userRef, {
@@ -629,6 +630,24 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
       sessionNo: Number(enrollment.data.sessionNo ?? 1),
       stagesInSession: Number(enrollment.data.stagesInSession ?? 0),
     };
+  }
+
+  // A configurable pause can run between stages as well as between sessions.
+  // It starts when the student confirms they have reviewed the model answers,
+  // so it does not punish a student who leaves the results page open.
+  const lastFeedbackSeenAt = toMillis(lastSubmittedData?.feedbackSeenAt);
+  if (settings.stageIntervalMinutes > 0 && lastFeedbackSeenAt !== null) {
+    const stageAvailableAt =
+      lastFeedbackSeenAt + settings.stageIntervalMinutes * 60 * 1000;
+    if (stageAvailableAt > now.toMillis()) {
+      return {
+        locked: true,
+        stageLocked: true,
+        nextAvailableAt: stageAvailableAt,
+        sessionNo: Number(enrollment.data.sessionNo ?? 1),
+        stagesInSession: Number(enrollment.data.stagesInSession ?? 0),
+      };
+    }
   }
 
   const inProgress = await getDocs(
@@ -1072,6 +1091,7 @@ async function submitStage(
     results: graded,
     sessionComplete,
     nextAvailableAt: nextAvailableAt ? nextAvailableAt.toMillis() : null,
+    stageIntervalMinutes: settings.stageIntervalMinutes,
     totalQuestions,
     coverageCount,
     masteryCount,
@@ -1271,6 +1291,7 @@ async function getStageResult(attemptId: string): Promise<StageResultResponse> {
     results: (attempt.answers ?? []) as GradedAnswer[],
     sessionComplete: Number(attempt.stageInSession ?? 0) >= settings.sessionStages,
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
+    stageIntervalMinutes: settings.stageIntervalMinutes,
     feedbackSeen: Boolean(attempt.feedbackSeenAt),
   };
 }
@@ -1335,6 +1356,26 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
     progressSnap.docs.map((progress) => [String(progress.data().unitId), progress.data()]),
   );
 
+  let stageAvailableAt: number | null = null;
+  if (settings.stageIntervalMinutes > 0) {
+    const lastSubmitted = await getDocs(
+      query(
+        collection(firestore, "stage_attempts"),
+        where("userId", "==", uid),
+        where("subjectId", "==", subjectId),
+        where("status", "==", "submitted"),
+        orderBy("submittedAt", "desc"),
+        limit(1),
+      ),
+    );
+    const feedbackSeenAt = lastSubmitted.empty
+      ? null
+      : toMillis(lastSubmitted.docs[0].data().feedbackSeenAt);
+    if (feedbackSeenAt !== null) {
+      stageAvailableAt = feedbackSeenAt + settings.stageIntervalMinutes * 60 * 1000;
+    }
+  }
+
   return {
     enrolled: true,
     subjectId,
@@ -1346,6 +1387,7 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
     sessionNo: Number(enrollment.sessionNo ?? 1),
     stagesInSession: Number(enrollment.stagesInSession ?? 0),
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
+    stageAvailableAt,
     completedAt: toMillis(enrollment.completedAt),
     masteryCompletedAt: toMillis(enrollment.masteryCompletedAt),
     stagesLocked: Boolean(globalSettings.stagesLocked || settings.stagesLocked),

@@ -3,7 +3,6 @@ import { Navigate } from "react-router-dom";
 import {
   EmailAuthProvider,
   reauthenticateWithCredential,
-  updateEmail,
   updatePassword,
 } from "firebase/auth";
 import {
@@ -43,7 +42,7 @@ import {
   saveAnnouncement,
 } from "../lib/announcements";
 import { errorMessage } from "../lib/errors";
-import { auth, db, STUDENT_EMAIL_DOMAIN } from "../lib/firebase";
+import { auth, db } from "../lib/firebase";
 import { formatDateTime, formatNumber, toMillis } from "../lib/format";
 import {
   DEFAULT_GLOBAL_SETTINGS,
@@ -316,7 +315,7 @@ export function AdminPage() {
       await logAdminAction(
         profile,
         "settings.subject",
-        `${selectedSubject?.name ?? subjectId}: ${saved.newPerStage} جديد + ${saved.reviewPerStage} مراجعة`,
+        `${selectedSubject?.name ?? subjectId}: ${saved.newPerStage} جديد + ${saved.reviewPerStage} مراجعة، فاصل المراحل ${saved.stageIntervalMinutes} د`,
       );
       showNotice("تم حفظ إعدادات المادة.");
     } catch (caught) {
@@ -471,44 +470,52 @@ export function AdminPage() {
       );
 
       const oldUsername = profile.usernameLower;
-      let emailChanged = false;
+
+      // Password is the security-critical change, so do it first. Firebase no
+      // longer permits silently replacing the synthetic login email (it wants
+      // an inbox verification that these internal addresses do not have).
+      if (newPassword) {
+        await updatePassword(authUser, newPassword);
+      }
+
       if (username !== oldUsername) {
         const newUsernameRef = doc(db!, "usernames", username);
         const existing = await getDoc(newUsernameRef);
         if (existing.exists() && existing.data().uid !== profile.uid) {
           throw new Error("اسم المستخدم محجوز. اختر اسمًا آخر.");
         }
-        await updateEmail(authUser, `${username}@${STUDENT_EMAIL_DOMAIN}`);
-        emailChanged = true;
-        try {
-          await runTransaction(db!, async (tx) => {
-            const fresh = await tx.get(newUsernameRef);
-            if (fresh.exists() && fresh.data().uid !== profile.uid) {
-              throw new Error("اسم المستخدم محجوز. اختر اسمًا آخر.");
-            }
-            tx.set(newUsernameRef, {
-              uid: profile.uid,
-              username,
-              createdAt: serverTimestamp(),
-            });
-            tx.delete(doc(db!, "usernames", oldUsername));
-            tx.update(doc(db!, "users", profile.uid), {
-              username,
-              usernameLower: username,
-            });
-          });
-        } catch (caught) {
-          if (emailChanged) {
-            await updateEmail(authUser, `${oldUsername}@${STUDENT_EMAIL_DOMAIN}`).catch(
-              () => undefined,
-            );
+        await runTransaction(db!, async (tx) => {
+          const fresh = await tx.get(newUsernameRef);
+          if (fresh.exists() && fresh.data().uid !== profile.uid) {
+            throw new Error("اسم المستخدم محجوز. اختر اسمًا آخر.");
           }
-          throw caught;
-        }
-      }
-
-      if (newPassword) {
-        await updatePassword(authUser, newPassword);
+          const oldUsernameRef = doc(db!, "usernames", oldUsername);
+          const oldReservation = await tx.get(oldUsernameRef);
+          const storedEmail = oldReservation.exists()
+            ? oldReservation.data().email
+            : null;
+          const loginEmail =
+            typeof storedEmail === "string" && storedEmail.includes("@")
+              ? storedEmail
+              : authUser.email!;
+          tx.set(newUsernameRef, {
+            uid: profile.uid,
+            username,
+            // Login resolves the new username to the original Auth email.
+            // The Auth email itself stays unchanged because Firebase requires
+            // verifying the new address before changing it.
+            email: loginEmail,
+            createdAt: oldReservation.exists()
+              ? (oldReservation.data().createdAt ?? serverTimestamp())
+              : serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          tx.delete(oldUsernameRef);
+          tx.update(doc(db!, "users", profile.uid), {
+            username,
+            usernameLower: username,
+          });
+        });
       }
 
       await setDoc(
@@ -700,6 +707,23 @@ export function AdminPage() {
                   }
                   placeholder="مثال: نعيد ترتيب بنك الأسئلة، تعود المراحل غدًا الساعة 8 صباحًا."
                 />
+              </label>
+
+              <label className="field">
+                <span>رسالة عامة تظهر أعلى الصفحة الرئيسية</span>
+                <textarea
+                  className="textarea"
+                  rows={2}
+                  value={globalSettings.maintenanceMessage}
+                  onChange={(event) =>
+                    setGlobalSettings((previous) => ({
+                      ...previous,
+                      maintenanceMessage: event.target.value,
+                    }))
+                  }
+                  placeholder="مثال: ننصح بمراجعة الوحدة الأولى قبل بدء جلسة اليوم."
+                />
+                <small>اتركها فارغة لإخفاء التنبيه. تظهر مع الإعلانات النشطة.</small>
               </label>
             </section>
 
@@ -902,6 +926,21 @@ export function AdminPage() {
                         patchSubject("intervalMinutes", Number(event.target.value))
                       }
                     />
+                    <small>يُستخدم أيضًا كأساس لجدولة المراجعة المتباعدة.</small>
+                  </label>
+                  <label className="field">
+                    <span>الفاصل بين المراحل (دقيقة)</span>
+                    <input
+                      className="input"
+                      type="number"
+                      min={0}
+                      max={10080}
+                      value={subjectSettings.stageIntervalMinutes}
+                      onChange={(event) =>
+                        patchSubject("stageIntervalMinutes", Number(event.target.value))
+                      }
+                    />
+                    <small>0 = بدون فاصل. يبدأ بعد تأكيد الاطلاع على الإجابات النموذجية.</small>
                   </label>
                   <label className="field">
                     <span>عودة السؤال الخاطئ بعد (دقيقة)</span>

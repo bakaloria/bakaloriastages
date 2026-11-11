@@ -103,6 +103,7 @@ export const register = onCall({ enforceAppCheck: ENFORCE_APP_CHECK }, async (re
       tx.set(usernameRef, {
         uid: user.uid,
         username: usernameLower,
+        email,
         createdAt: FieldValue.serverTimestamp(),
       });
       tx.set(db.doc(`users/${user.uid}`), {
@@ -169,6 +170,23 @@ export const startStage = onCall({ enforceAppCheck: ENFORCE_APP_CHECK }, async (
       sessionNo: Number(enrollment.data.sessionNo ?? 1),
       stagesInSession: Number(enrollment.data.stagesInSession ?? 0),
     };
+  }
+
+  const lastFeedbackSeenAt = toMillis(
+    lastSubmitted.empty ? null : lastSubmitted.docs[0].data().feedbackSeenAt,
+  );
+  if (settings.stageIntervalMinutes > 0 && lastFeedbackSeenAt !== null) {
+    const stageAvailableAt =
+      lastFeedbackSeenAt + settings.stageIntervalMinutes * 60 * 1000;
+    if (stageAvailableAt > now.toMillis()) {
+      return {
+        locked: true,
+        stageLocked: true,
+        nextAvailableAt: stageAvailableAt,
+        sessionNo: Number(enrollment.data.sessionNo ?? 1),
+        stagesInSession: Number(enrollment.data.stagesInSession ?? 0),
+      };
+    }
   }
 
   const inProgress = await db
@@ -535,6 +553,7 @@ export const submitStage = onCall({ enforceAppCheck: ENFORCE_APP_CHECK }, async 
     results: graded,
     sessionComplete,
     nextAvailableAt: nextAvailableAt ? nextAvailableAt.toMillis() : null,
+    stageIntervalMinutes: settings.stageIntervalMinutes,
     totalQuestions,
     coverageCount,
     masteryCount,
@@ -723,6 +742,7 @@ export const getStageResult = onCall({ enforceAppCheck: ENFORCE_APP_CHECK }, asy
     results: attempt.answers ?? [],
     sessionComplete: Number(attempt.stageInSession ?? 0) >= settings.sessionStages,
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
+    stageIntervalMinutes: settings.stageIntervalMinutes,
     feedbackSeen: Boolean(attempt.feedbackSeenAt),
   };
 });

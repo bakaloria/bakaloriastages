@@ -56,6 +56,7 @@ export interface SubjectProgress {
   sessionNo: number;
   stagesInSession: number;
   nextAvailableAt: number | null;
+  stageAvailableAt: number | null;
   completedAt: number | null;
   masteryCompletedAt: number | null;
   stagesLocked: boolean;
@@ -88,6 +89,7 @@ export interface StageLocked {
   sessionNo?: number;
   stagesInSession?: number;
   adminLocked?: boolean;
+  stageLocked?: boolean;
   lockMessage?: string;
 }
 
@@ -137,6 +139,7 @@ export interface SubmitStageResponse {
   results: GradedAnswer[];
   sessionComplete: boolean;
   nextAvailableAt: number | null;
+  stageIntervalMinutes: number;
   totalQuestions: number;
   coverageCount: number;
   masteryCount: number;
@@ -149,6 +152,7 @@ export interface StageResultResponse {
   results: GradedAnswer[];
   sessionComplete: boolean;
   nextAvailableAt: number | null;
+  stageIntervalMinutes: number;
   feedbackSeen: boolean;
 }
 
@@ -190,6 +194,7 @@ export interface SubjectSettings {
   passThreshold: number;
   sessionStages: number;
   intervalMinutes: number;
+  stageIntervalMinutes: number;
   wrongIntervalMinutes: number;
   masteryThreshold: number;
   finalExamRequired: boolean;

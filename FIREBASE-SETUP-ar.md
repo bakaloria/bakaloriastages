@@ -288,6 +288,7 @@ await admin.firestore().doc("users/<UID>").set(
   "passThreshold": 60,
   "sessionStages": 10,
   "intervalMinutes": 120,
+  "stageIntervalMinutes": 0,
   "wrongIntervalMinutes": 10,
   "masteryThreshold": 1,
   "finalExamRequired": false,
@@ -307,6 +308,13 @@ await admin.firestore().doc("users/<UID>").set(
 - `intervalMinutes`: الفاصل بين الجلسات، ويُستخدم أيضًا كأساس لجدولة عودة السؤال
   الصحيح للمراجعة (120 = ساعتان). الأسئلة الخاطئة تعود بعد
   `wrongIntervalMinutes`، والأسئلة المتقنة تتضاعف مدة مراجعتها تدريجيًا.
+- `stageIntervalMinutes`: فاصل اختياري بين مرحلتين داخل الجلسة. القيمة `0` تعني
+  فتح المرحلة التالية مباشرة بعد تأكيد الاطلاع على الإجابات النموذجية. عند تفعيله
+  يبدأ العدّاد من لحظة التأكيد، لا من لحظة التسليم.
+- تغيير اسم مستخدم المدير يحرّك وثيقة `usernames/{username}` ويحفظ البريد الأصلي
+  في الحقل `email`؛ تسجيل الدخول يقرأ هذا الحقل قبل المصادقة. لا يُستدعى
+  `updateEmail` لأن Firebase يطلب التحقق من البريد الجديد، والعناوين الداخلية
+  `@students.bakaloriarace.app` لا تملك صندوق وارد.
 - `masteryThreshold`: 1 = إتقان 100%، 0.9 = 90%.
 - `stagesLocked` و`lockMessage`: إغلاق بدء المراحل لهذه المادة مع رسالة للطالب.
 - `finalExamRequired`: يبقى الامتحان النهائي اختياريًا ومعطلًا افتراضيًا.
@@ -323,6 +331,10 @@ await admin.firestore().doc("users/<UID>").set(
   "maintenanceMessage": ""
 }
 ```
+
+- `lockMessage`: تظهر للطالب داخل بطاقة إغلاق المراحل.
+- `maintenanceMessage`: تنبيه عام يظهر أعلى الصفحة الرئيسية مع الإعلانات النشطة،
+  ويمكن تركه فارغًا لإخفائه.
 
 ### `announcements/{announcementId}`
 

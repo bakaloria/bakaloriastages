@@ -56,6 +56,22 @@ export function SubjectPage() {
   }, [subjectId]);
 
   useEffect(() => {
+    const targets = [
+      toMillis(progress?.nextAvailableAt),
+      toMillis(progress?.stageAvailableAt),
+    ].filter((value): value is number => value !== null);
+    if (targets.length === 0) return;
+    const next = Math.min(...targets);
+    const delay = next - Date.now();
+    if (delay <= 0) {
+      void loadProgress();
+      return;
+    }
+    const timer = window.setTimeout(() => void loadProgress(), delay + 500);
+    return () => window.clearTimeout(timer);
+  }, [progress?.nextAvailableAt, progress?.stageAvailableAt, loadProgress]);
+
+  useEffect(() => {
     let active = true;
     async function load() {
       if (!db || !subjectId) return;
@@ -124,7 +140,9 @@ export function SubjectPage() {
   const mastered = Number(progress?.masteryCount ?? 0);
   const masteryTarget = Number(progress?.masteryTarget ?? total);
   const nextAvailableAt = toMillis(progress?.nextAvailableAt);
+  const stageAvailableAt = toMillis(progress?.stageAvailableAt);
   const locked = Boolean(nextAvailableAt && nextAvailableAt > Date.now());
+  const stageLocked = Boolean(stageAvailableAt && stageAvailableAt > Date.now());
   const stagesLocked = Boolean(progress?.stagesLocked);
   const completed = Boolean(progress?.completedAt);
   const canClaim = completed || (total > 0 && covered >= total && mastered >= masteryTarget);
@@ -199,7 +217,16 @@ export function SubjectPage() {
               <strong>الجلسة التالية بعد</strong>
               <Countdown target={nextAvailableAt} />
             </div>
-            <span className="muted small">الفاصل بين الجلسات، وليس بين المراحل.</span>
+            <span className="muted small">فاصل الجلسة الذي حددته الإدارة.</span>
+          </div>
+        ) : stageLocked ? (
+          <div className="locked-action">
+            <span className="locked-action__icon"><ClockIcon /></span>
+            <div>
+              <strong>المرحلة التالية بعد</strong>
+              <Countdown target={stageAvailableAt} />
+            </div>
+            <span className="muted small">فاصل بين المراحل حددته الإدارة.</span>
           </div>
         ) : (
           <button className="button button--primary button--lg" type="button" onClick={() => navigate(`/stage/${subject.id}`)}>

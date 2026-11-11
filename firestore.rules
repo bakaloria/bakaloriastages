@@ -45,8 +45,13 @@ service cloud.firestore {
     // The client creates its username reservation inside the registration
     // transaction. It may read its own reservation but never edit it.
     // Admins may move the reservation when they change their login name.
+    //
+    // Exact-document get is public because login has to resolve a username to
+    // its original Auth email before the user has a session. Listing remains
+    // restricted so the collection cannot be enumerated casually.
     match /usernames/{username} {
-      allow get, list: if isSignedIn();
+      allow get: if true;
+      allow list: if isSignedIn();
       allow create: if isSignedIn() && (
         isAdmin() ||
         (

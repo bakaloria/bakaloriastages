@@ -13,6 +13,9 @@ export const DEFAULT_SUBJECT_SETTINGS: SubjectSettings = {
   passThreshold: 60,
   sessionStages: 10,
   intervalMinutes: 120,
+  // Optional pause between two stages. Zero keeps the original behaviour:
+  // the next stage opens as soon as the student confirms they saw feedback.
+  stageIntervalMinutes: 0,
   wrongIntervalMinutes: 10,
   masteryThreshold: 1,
   finalExamRequired: false,
@@ -78,6 +81,12 @@ export function normalizeSubjectSettings(data: Partial<SubjectSettings> | null):
       0,
       7 * 24 * 60,
       DEFAULT_SUBJECT_SETTINGS.intervalMinutes,
+    ),
+    stageIntervalMinutes: clamp(
+      merged.stageIntervalMinutes,
+      0,
+      7 * 24 * 60,
+      DEFAULT_SUBJECT_SETTINGS.stageIntervalMinutes,
     ),
     wrongIntervalMinutes: clamp(
       merged.wrongIntervalMinutes,

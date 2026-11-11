@@ -9,6 +9,7 @@ export const DEFAULT_SETTINGS: SubjectSettings = {
   reviewPerStage: 2,
   sessionStages: 10,
   intervalMinutes: 120,
+  stageIntervalMinutes: 0,
   masteryThreshold: 1,
   finalExamRequired: false,
 };
@@ -80,6 +81,10 @@ export async function getSettings(subjectId: string): Promise<SubjectSettings> {
     reviewPerStage: Math.max(0, Math.min(10, Number(merged.reviewPerStage) || 0)),
     sessionStages: Math.max(1, Math.min(50, Number(merged.sessionStages) || DEFAULT_SETTINGS.sessionStages)),
     intervalMinutes: Math.max(0, Math.min(7 * 24 * 60, Number(merged.intervalMinutes) || 0)),
+    stageIntervalMinutes: Math.max(
+      0,
+      Math.min(7 * 24 * 60, Number(merged.stageIntervalMinutes) || 0),
+    ),
     masteryThreshold: Math.max(0, Math.min(1, Number(merged.masteryThreshold) || 0)),
     finalExamRequired: Boolean(merged.finalExamRequired),
   };
@@ -307,6 +312,24 @@ export async function getSubjectProgress(uid: string, subjectId: string) {
     progressSnap.docs.map((doc) => [String(doc.data().unitId), doc.data()]),
   );
 
+  let stageAvailableAt: number | null = null;
+  if (settings.stageIntervalMinutes > 0) {
+    const lastSubmitted = await db
+      .collection("stage_attempts")
+      .where("userId", "==", uid)
+      .where("subjectId", "==", subjectId)
+      .where("status", "==", "submitted")
+      .orderBy("submittedAt", "desc")
+      .limit(1)
+      .get();
+    const feedbackSeenAt = lastSubmitted.empty
+      ? null
+      : toMillis(lastSubmitted.docs[0].data().feedbackSeenAt);
+    if (feedbackSeenAt !== null) {
+      stageAvailableAt = feedbackSeenAt + settings.stageIntervalMinutes * 60 * 1000;
+    }
+  }
+
   return {
     enrolled: true,
     subjectId,
@@ -318,6 +341,7 @@ export async function getSubjectProgress(uid: string, subjectId: string) {
     sessionNo: Number(enrollment.sessionNo ?? 1),
     stagesInSession: Number(enrollment.stagesInSession ?? 0),
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
+    stageAvailableAt,
     completedAt: toMillis(enrollment.completedAt),
     masteryCompletedAt: toMillis(enrollment.masteryCompletedAt),
     byUnit: unitsSnap.docs.map((unitDoc) => {

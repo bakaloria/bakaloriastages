@@ -51,6 +51,7 @@ export interface SubjectSettings {
   reviewPerStage: number;
   sessionStages: number;
   intervalMinutes: number;
+  stageIntervalMinutes: number;
   masteryThreshold: number;
   finalExamRequired: boolean;
 }

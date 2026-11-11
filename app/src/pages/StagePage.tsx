@@ -42,6 +42,7 @@ interface ResultMeta {
   score: number;
   sessionComplete: boolean;
   nextAvailableAt: number | null;
+  stageIntervalMinutes: number;
   totalQuestions?: number;
   coverageCount?: number;
   masteryCount?: number;
@@ -84,6 +85,7 @@ export function StagePage() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [lockTarget, setLockTarget] = useState<number | null>(null);
   const [adminLocked, setAdminLocked] = useState(false);
+  const [stageLocked, setStageLocked] = useState(false);
   const [lockMessage, setLockMessage] = useState("");
   const [feedbackMode, setFeedbackMode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -97,6 +99,7 @@ export function StagePage() {
         score: payload.score,
         sessionComplete: payload.sessionComplete,
         nextAvailableAt: payload.nextAvailableAt,
+        stageIntervalMinutes: payload.stageIntervalMinutes,
       });
       const graded: Record<string, SelfScore> = {};
       for (const result of payload.results) {
@@ -120,6 +123,7 @@ export function StagePage() {
       if ("locked" in data) {
         setLockTarget(data.nextAvailableAt);
         setAdminLocked(Boolean(data.adminLocked));
+        setStageLocked(Boolean(data.stageLocked));
         setLockMessage(String(data.lockMessage ?? ""));
         setPhase("locked");
         return;
@@ -159,6 +163,19 @@ export function StagePage() {
   useEffect(() => {
     void loadStage();
   }, [loadStage]);
+
+  // When a countdown finishes, re-check the server instead of leaving a stale
+  // "locked" card on screen until the student manually reloads.
+  useEffect(() => {
+    if (phase !== "locked" || adminLocked || !lockTarget) return;
+    const delay = lockTarget - Date.now();
+    if (delay <= 0) {
+      void loadStage();
+      return;
+    }
+    const timer = window.setTimeout(() => void loadStage(), delay + 500);
+    return () => window.clearTimeout(timer);
+  }, [phase, adminLocked, lockTarget, loadStage]);
 
   const questions = stage?.questions ?? [];
   const currentQuestion = questions[currentIndex];
@@ -203,6 +220,7 @@ export function StagePage() {
         score: response.score,
         sessionComplete: response.sessionComplete,
         nextAvailableAt: response.nextAvailableAt,
+        stageIntervalMinutes: response.stageIntervalMinutes,
         totalQuestions: response.totalQuestions,
         coverageCount: response.coverageCount,
         masteryCount: response.masteryCount,
@@ -298,12 +316,20 @@ export function StagePage() {
   if (phase === "locked") {
     return (
       <div className="page">
-        <div className={`session-card${adminLocked ? " session-card--admin-lock" : ""}`}>
+        <div className={`session-card${adminLocked ? " session-card--admin-lock" : ""}${stageLocked ? " session-card--stage-lock" : ""}`}>
           <div className="session-card__icon">
             {adminLocked ? <LockIcon /> : <ClockIcon />}
           </div>
-          <span className="eyebrow">{adminLocked ? "إعلان إداري" : "انتهت الجلسة"}</span>
-          <h1>{adminLocked ? "المراحل مغلقة مؤقتًا" : "خذ قسطًا من الراحة"}</h1>
+          <span className="eyebrow">
+            {adminLocked ? "إعلان إداري" : stageLocked ? "فاصل بين المراحل" : "انتهت الجلسة"}
+          </span>
+          <h1>
+            {adminLocked
+              ? "المراحل مغلقة مؤقتًا"
+              : stageLocked
+                ? "استراحة قصيرة بين المراحل"
+                : "خذ قسطًا من الراحة"}
+          </h1>
           {adminLocked ? (
             <>
               <p>{lockMessage || "أوقفت الإدارة فتح مراحل جديدة حاليًا. يمكنك مراجعة نتائجك السابقة والعودة لاحقًا."}</p>
@@ -315,7 +341,9 @@ export function StagePage() {
           ) : (
             <>
               <p>
-                المراجعة المتباعدة تحتاج فاصلًا حتى يثبت ما تعلمته. الجلسة التالية تبدأ بعد:
+                {stageLocked
+                  ? "حددت الإدارة فاصلًا زمنيًا بين المراحل حتى يثبت ما تعلمته. المرحلة التالية تبدأ بعد:"
+                  : "المراجعة المتباعدة تحتاج فاصلًا حتى يثبت ما تعلمته. الجلسة التالية تبدأ بعد:"}
               </p>
               <div className="session-card__countdown">
                 <Countdown target={lockTarget} />
@@ -394,6 +422,14 @@ export function StagePage() {
                 <span>
                   انتهت الجلسة. المرحلة التالية متاحة بعد{" "}
                   <Countdown target={nextAvailableAt} />
+                </span>
+              </div>
+            ) : resultMeta?.stageIntervalMinutes ? (
+              <div className="inline-alert inline-alert--gold">
+                <ClockIcon />
+                <span>
+                  بعد تأكيد الاطلاع، تبدأ المرحلة التالية بعد{" "}
+                  <strong>{formatNumber(resultMeta.stageIntervalMinutes)}</strong> دقيقة.
                 </span>
               </div>
             ) : null}

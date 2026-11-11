@@ -13,7 +13,7 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, onSnapshot } from "firebase/firestore";
 import { api } from "../lib/api";
 import {
   auth,
@@ -100,7 +100,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (username: string, password: string) => {
     if (!auth) throw new Error("FIREBASE_NOT_CONFIGURED");
-    const email = `${username.trim().toLowerCase()}@${STUDENT_EMAIL_DOMAIN}`;
+    const usernameLower = username.trim().toLowerCase();
+    let email = `${usernameLower}@${STUDENT_EMAIL_DOMAIN}`;
+    if (db) {
+      try {
+        // Firebase does not allow changing the synthetic login email without
+        // verifying an inbox that does not exist. The username reservation
+        // therefore stores the original Auth email so a renamed account can
+        // still sign in with its new username.
+        const alias = await getDoc(doc(db, "usernames", usernameLower));
+        const storedEmail = alias.exists() ? alias.data().email : null;
+        if (typeof storedEmail === "string" && storedEmail.includes("@")) {
+          email = storedEmail;
+        }
+      } catch {
+        // Keep the deterministic email fallback for older reservations or
+        // when the alias lookup is temporarily unavailable.
+      }
+    }
     await signInWithEmailAndPassword(auth, email, password);
   }, []);
 

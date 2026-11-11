@@ -34,8 +34,12 @@ import {
   XIcon,
 } from "../components/Icons";
 import { InlineLoader } from "../components/Loading";
+import { QuestionBankPanel } from "../components/QuestionBankPanel";
 import { useAuth } from "../context/AuthContext";
 import {
+  ANNOUNCEMENT_ANIMATIONS,
+  ANNOUNCEMENT_FONTS,
+  announcementClasses,
   fetchAllAnnouncements,
   logAdminAction,
   removeAnnouncement,
@@ -45,6 +49,8 @@ import { errorMessage } from "../lib/errors";
 import { auth, db } from "../lib/firebase";
 import { formatDateTime, formatNumber, toMillis } from "../lib/format";
 import {
+  applyBackgroundColor,
+  BACKGROUND_PRESETS,
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_SUBJECT_SETTINGS,
   fetchGlobalSettings,
@@ -57,6 +63,8 @@ import type {
   AdminAuditEntry,
   AdminUserRow,
   Announcement,
+  AnnouncementAnimation,
+  AnnouncementFont,
   AnnouncementTone,
   Branch,
   GlobalSettings,
@@ -65,7 +73,7 @@ import type {
   SubjectSettings,
 } from "../lib/types";
 
-type Tab = "overview" | "subjects" | "announcements" | "students" | "account";
+type Tab = "overview" | "subjects" | "questions" | "announcements" | "students" | "account";
 
 interface Stats {
   users: number;
@@ -79,6 +87,8 @@ interface AnnouncementDraft {
   title: string;
   body: string;
   tone: AnnouncementTone;
+  animation: AnnouncementAnimation;
+  font: AnnouncementFont;
   active: boolean;
   pinned: boolean;
   expiresAt: string;
@@ -88,6 +98,8 @@ const EMPTY_ANNOUNCEMENT: AnnouncementDraft = {
   title: "",
   body: "",
   tone: "info",
+  animation: "slide-right",
+  font: "default",
   active: true,
   pinned: false,
   expiresAt: "",
@@ -96,6 +108,7 @@ const EMPTY_ANNOUNCEMENT: AnnouncementDraft = {
 const TABS: Array<{ id: Tab; label: string; icon: typeof SettingsIcon }> = [
   { id: "overview", label: "نظرة عامة", icon: SparklesIcon },
   { id: "subjects", label: "المواد والمراحل", icon: SettingsIcon },
+  { id: "questions", label: "بنك الأسئلة", icon: BookIcon },
   { id: "announcements", label: "الإعلانات", icon: MegaphoneIcon },
   { id: "students", label: "الطلاب", icon: UserIcon },
   { id: "account", label: "أمان الحساب", icon: ShieldIcon },
@@ -171,9 +184,9 @@ export function AdminPage() {
     );
   }, [students, studentSearch]);
 
-  const loadBase = useCallback(async () => {
+  const loadBase = useCallback(async (options?: { silent?: boolean }) => {
     if (!db) return;
-    setLoading(true);
+    if (!options?.silent) setLoading(true);
     try {
       const [subjectSnap, global, announcementRows, userSnap] = await Promise.all([
         getDocs(query(collection(db, "subjects"), orderBy("sort", "asc"))),
@@ -244,7 +257,7 @@ export function AdminPage() {
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
-      setLoading(false);
+      if (!options?.silent) setLoading(false);
     }
   }, []);
 
@@ -291,10 +304,11 @@ export function AdminPage() {
     try {
       const saved = await saveGlobalSettings(globalSettings, profile.uid);
       setGlobalSettings(saved);
+      applyBackgroundColor(saved.backgroundColor);
       await logAdminAction(
         profile,
         "settings.global",
-        saved.stagesLocked ? "إغلاق المراحل" : "فتح المراحل",
+        `${saved.stagesLocked ? "إغلاق المراحل" : "فتح المراحل"} • خلفية ${saved.backgroundColor}`,
       );
       showNotice("تم حفظ الإعدادات العامة.");
     } catch (caught) {
@@ -335,6 +349,8 @@ export function AdminPage() {
       title: announcement.title,
       body: announcement.body,
       tone: announcement.tone,
+      animation: announcement.animation,
+      font: announcement.font,
       active: announcement.active,
       pinned: announcement.pinned,
       expiresAt: dateInputValue(announcement.expiresAt),
@@ -359,6 +375,8 @@ export function AdminPage() {
           title: draft.title,
           body: draft.body,
           tone: draft.tone,
+          animation: draft.animation,
+          font: draft.font,
           active: draft.active,
           pinned: draft.pinned,
           expiresAt: draft.expiresAt
@@ -725,6 +743,48 @@ export function AdminPage() {
                 />
                 <small>اتركها فارغة لإخفاء التنبيه. تظهر مع الإعلانات النشطة.</small>
               </label>
+
+              <div className="field">
+                <span>لون خلفية المنصة</span>
+                <div className="theme-swatches">
+                  {BACKGROUND_PRESETS.map((preset) => (
+                    <button
+                      key={preset.value}
+                      type="button"
+                      className={`theme-swatch${
+                        globalSettings.backgroundColor === preset.value ? " is-selected" : ""
+                      }`}
+                      style={{ backgroundColor: preset.value }}
+                      title={preset.label}
+                      aria-label={preset.label}
+                      onClick={() =>
+                        setGlobalSettings((previous) => ({
+                          ...previous,
+                          backgroundColor: preset.value,
+                        }))
+                      }
+                    />
+                  ))}
+                  <label className="theme-swatch theme-swatch--custom" title="لون مخصص">
+                    <input
+                      type="color"
+                      value={globalSettings.backgroundColor}
+                      onChange={(event) =>
+                        setGlobalSettings((previous) => ({
+                          ...previous,
+                          backgroundColor: event.target.value,
+                        }))
+                      }
+                    />
+                    <span>+</span>
+                  </label>
+                </div>
+                <div className="theme-preview" style={{ backgroundColor: globalSettings.backgroundColor }}>
+                  <strong>معاينة الخلفية</strong>
+                  <span>يُطبّق اللون فور الحفظ على كل صفحات الطلاب.</span>
+                </div>
+                <small>اختر لونًا فاتحًا ليبقى النص مقروءًا. يمكنك أيضًا اختيار لون مخصص.</small>
+              </div>
             </section>
 
             <section className="admin-card">
@@ -764,6 +824,11 @@ export function AdminPage() {
               <MegaphoneIcon />
               <strong>نشر إعلان</strong>
               <span>رسالة تظهر في الرئيسية ومركز الإشعارات</span>
+            </button>
+            <button type="button" className="admin-quick" onClick={() => setTab("questions")}>
+              <BookIcon />
+              <strong>بنك الأسئلة</strong>
+              <span>إضافة فردية أو دفعة واستيراد JSON</span>
             </button>
             <button type="button" className="admin-quick" onClick={() => setTab("students")}>
               <UserIcon />
@@ -1021,6 +1086,14 @@ export function AdminPage() {
         </div>
       ) : null}
 
+      {effectiveTab === "questions" ? (
+        <QuestionBankPanel
+          subjects={subjects}
+          profile={profile}
+          onChanged={() => void loadBase({ silent: true })}
+        />
+      ) : null}
+
       {effectiveTab === "announcements" ? (
         <div className="admin-panel admin-split admin-split--announcements">
           <section className="admin-card">
@@ -1101,7 +1174,63 @@ export function AdminPage() {
                     }
                   />
                 </label>
+                <label className="field">
+                  <span>حركة الإعلان</span>
+                  <select
+                    className="input"
+                    value={draft.animation}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        animation: event.target.value as AnnouncementAnimation,
+                      }))
+                    }
+                  >
+                    {ANNOUNCEMENT_ANIMATIONS.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label} — {option.description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>خط الإعلان</span>
+                  <select
+                    className="input"
+                    value={draft.font}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        font: event.target.value as AnnouncementFont,
+                      }))
+                    }
+                  >
+                    {ANNOUNCEMENT_FONTS.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label} — {option.sample}
+                      </option>
+                    ))}
+                  </select>
+                </label>
               </div>
+
+              <div className="announcement-preview">
+                <span className="eyebrow"><SparklesIcon /> معاينة مباشرة</span>
+                <article
+                  className={announcementClasses({
+                    tone: draft.tone,
+                    animation: draft.animation,
+                    font: draft.font,
+                  })}
+                >
+                  <span className="notice__icon"><MegaphoneIcon /></span>
+                  <div className="notice__content">
+                    <strong>{draft.title || "عنوان الإعلان"}</strong>
+                    <p>{draft.body || "سيظهر نص رسالتك هنا بالحركة والخط المختارين."}</p>
+                  </div>
+                </article>
+              </div>
+
               <div className="admin-toggle-row">
                 <label className="admin-switch admin-switch--compact">
                   <input
@@ -1164,6 +1293,15 @@ export function AdminPage() {
                         {announcement.active ? "منشور" : "مسودة"}
                       </span>
                       {announcement.pinned ? <span className="badge badge--gold">مثبّت</span> : null}
+                      <span className="badge badge--soft">
+                        {ANNOUNCEMENT_ANIMATIONS.find(
+                          (item) => item.value === announcement.animation,
+                        )?.label ?? "بدون حركة"}
+                      </span>
+                      <span className="badge badge--soft">
+                        {ANNOUNCEMENT_FONTS.find((item) => item.value === announcement.font)?.label ??
+                          "الخط الافتراضي"}
+                      </span>
                       <span className="muted small">{formatDateTime(announcement.createdAt)}</span>
                     </div>
                     <h3>{announcement.title}</h3>

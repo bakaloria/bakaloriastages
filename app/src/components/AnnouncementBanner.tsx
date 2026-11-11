@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BellIcon, ChevronLeftIcon, MegaphoneIcon } from "./Icons";
-import { fetchActiveAnnouncements } from "../lib/announcements";
+import {
+  announcementClasses,
+  fetchActiveAnnouncements,
+} from "../lib/announcements";
 import { fetchGlobalSettings } from "../lib/settings";
 import type { Announcement } from "../lib/types";
 
@@ -43,7 +46,7 @@ export function AnnouncementBanner() {
         </article>
       ) : null}
       {announcements.map((announcement) => (
-        <article className={toneClass(announcement.tone)} key={announcement.id}>
+        <article className={announcementClasses(announcement)} key={announcement.id}>
           <span className="notice__icon">
             {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
           </span>

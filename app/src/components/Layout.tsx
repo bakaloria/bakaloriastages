@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { doc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { branchLabel } from "../lib/format";
 import {
   fetchActiveAnnouncements,
   unseenAnnouncementCount,
 } from "../lib/announcements";
+import { db } from "../lib/firebase";
+import {
+  applyBackgroundColor,
+  DEFAULT_GLOBAL_SETTINGS,
+  normalizeGlobalSettings,
+} from "../lib/settings";
+import type { GlobalSettings } from "../lib/types";
 import {
   BellIcon,
   ChartIcon,
@@ -58,6 +66,27 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (!profile || !db) {
+      applyBackgroundColor(DEFAULT_GLOBAL_SETTINGS.backgroundColor);
+      return;
+    }
+    const unsubscribe = onSnapshot(
+      doc(db, "settings", "global"),
+      (snapshot) => {
+        const settings = normalizeGlobalSettings(
+          snapshot.exists() ? (snapshot.data() as Partial<GlobalSettings>) : null,
+        );
+        applyBackgroundColor(settings.backgroundColor);
+      },
+      () => applyBackgroundColor(DEFAULT_GLOBAL_SETTINGS.backgroundColor),
+    );
+    return () => {
+      unsubscribe();
+      applyBackgroundColor(DEFAULT_GLOBAL_SETTINGS.backgroundColor);
+    };
+  }, [profile]);
 
   useEffect(() => {
     if (!profile) return;

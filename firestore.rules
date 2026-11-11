@@ -166,7 +166,8 @@ service cloud.firestore {
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == resource.data.userId
         && request.resource.data.questionId == resource.data.questionId;
-      allow delete: if false;
+      // Admins may clean up rows that point at a question removed from the bank.
+      allow delete: if isAdmin();
     }
 
     match /unit_progress/{unitProgressId} {

@@ -4,6 +4,7 @@ import { EmptyState } from "../components/EmptyState";
 import { BellIcon, MegaphoneIcon, RefreshIcon } from "../components/Icons";
 import { InlineLoader } from "../components/Loading";
 import {
+  announcementClasses,
   fetchActiveAnnouncements,
   markAnnouncementsSeen,
 } from "../lib/announcements";
@@ -76,7 +77,7 @@ export function NotificationsPage() {
       ) : (
         <div className="notice-list">
           {announcements.map((announcement) => (
-            <article className={`notice notice--${announcement.tone}`} key={announcement.id}>
+            <article className={announcementClasses(announcement)} key={announcement.id}>
               <span className="notice__icon">
                 {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
               </span>

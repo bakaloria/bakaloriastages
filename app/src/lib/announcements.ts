@@ -13,9 +13,70 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { Announcement, AnnouncementTone, Profile } from "./types";
+import type {
+  Announcement,
+  AnnouncementAnimation,
+  AnnouncementFont,
+  AnnouncementTone,
+  Profile,
+} from "./types";
 
 const SEEN_KEY = "bakaloriastages.seenAnnouncements";
+
+export const ANNOUNCEMENT_ANIMATIONS: Array<{
+  value: AnnouncementAnimation;
+  label: string;
+  description: string;
+}> = [
+  { value: "none", label: "بدون حركة", description: "ثابت وهادئ" },
+  { value: "slide-right", label: "دخول من اليمين", description: "انزلاق من جهة البداية" },
+  { value: "slide-left", label: "دخول من اليسار", description: "انزلاق من الجهة المقابلة" },
+  { value: "slide-up", label: "صعود من الأسفل", description: "ظهور تدريجي من الأسفل" },
+  { value: "slide-down", label: "هبوط من الأعلى", description: "ظهور تدريجي من الأعلى" },
+  { value: "fade", label: "تلاشي هادئ", description: "ظهور وتلاشي ناعم" },
+  { value: "zoom-in", label: "تكبير", description: "يتقارب من المركز" },
+  { value: "zoom-out", label: "تصغير", description: "يبدأ أكبر ثم يستقر" },
+  { value: "bounce", label: "قفز خفيف", description: "حركة رأسية متكررة" },
+  { value: "pulse", label: "نبض", description: "تنفس بصري متكرر" },
+  { value: "shake", label: "اهتزاز", description: "تنبيه أفقي متكرر" },
+  { value: "swing", label: "تمايل", description: "حركة دورانية خفيفة" },
+  { value: "flip", label: "انقلاب", description: "دوران ثلاثي الأبعاد" },
+  { value: "rotate", label: "دوران", description: "يدخل بزاوية ثم يستقر" },
+  { value: "float", label: "طائر", description: "طفو رأسي هادئ" },
+  { value: "orbit", label: "حركة دائرية", description: "مسار دائري صغير متكرر" },
+];
+
+export const ANNOUNCEMENT_FONTS: Array<{
+  value: AnnouncementFont;
+  label: string;
+  sample: string;
+}> = [
+  { value: "default", label: "الخط الافتراضي", sample: "مراحل البكالوريا" },
+  { value: "cairo", label: "القاهرة", sample: "علمٌ يُبنى بالمراجعة" },
+  { value: "amiri", label: "أميري", sample: "خط كلاسيكي أنيق" },
+  { value: "scheherazade", label: "شهرزاد", sample: "نص عربي واضح" },
+  { value: "aref", label: "عارف رقعة", sample: "زخرفة رقعة" },
+  { value: "reem", label: "ريم كوفي", sample: "كوفي إسلامي" },
+  { value: "lateef", label: "لطيف", sample: "نسخ هادئ" },
+  { value: "naskh", label: "نسخ حديث", sample: "قراءة مريحة" },
+  { value: "rakkas", label: "رقّاص", sample: "زخرفة قوية" },
+  { value: "lalezar", label: "لاله زار", sample: "عنوان لافت" },
+];
+
+const ANIMATION_VALUES = new Set(ANNOUNCEMENT_ANIMATIONS.map((item) => item.value));
+const FONT_VALUES = new Set(ANNOUNCEMENT_FONTS.map((item) => item.value));
+
+function asAnimation(value: unknown): AnnouncementAnimation {
+  return ANIMATION_VALUES.has(value as AnnouncementAnimation)
+    ? (value as AnnouncementAnimation)
+    : "none";
+}
+
+function asFont(value: unknown): AnnouncementFont {
+  return FONT_VALUES.has(value as AnnouncementFont)
+    ? (value as AnnouncementFont)
+    : "default";
+}
 
 export function announcementFromDoc(
   id: string,
@@ -30,6 +91,8 @@ export function announcementFromDoc(
     title: String(data.title ?? ""),
     body: String(data.body ?? ""),
     tone,
+    animation: asAnimation(data.animation),
+    font: asFont(data.font),
     active: data.active !== false,
     pinned: Boolean(data.pinned),
     createdAt: data.createdAt,
@@ -37,6 +100,17 @@ export function announcementFromDoc(
     expiresAt: data.expiresAt,
     createdBy: String(data.createdBy ?? ""),
   };
+}
+
+export function announcementClasses(
+  announcement: Pick<Announcement, "tone" | "animation" | "font">,
+): string {
+  return [
+    "notice",
+    `notice--${announcement.tone}`,
+    `notice--anim-${announcement.animation}`,
+    `notice--font-${announcement.font}`,
+  ].join(" ");
 }
 
 function expiryMillis(value: unknown): number | null {
@@ -83,6 +157,8 @@ export async function saveAnnouncement(
     title: string;
     body: string;
     tone: AnnouncementTone;
+    animation: AnnouncementAnimation;
+    font: AnnouncementFont;
     active: boolean;
     pinned: boolean;
     expiresAt: number | null;
@@ -94,6 +170,8 @@ export async function saveAnnouncement(
     title: input.title.trim(),
     body: input.body.trim(),
     tone: input.tone,
+    animation: asAnimation(input.animation),
+    font: asFont(input.font),
     active: input.active,
     pinned: input.pinned,
     expiresAt: input.expiresAt ? Timestamp.fromMillis(input.expiresAt) : null,

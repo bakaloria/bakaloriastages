@@ -207,15 +207,48 @@ export interface GlobalSettings {
   registrationsOpen: boolean;
   lockMessage: string;
   maintenanceMessage: string;
+  backgroundColor: string;
 }
 
 export type AnnouncementTone = "info" | "success" | "warning" | "danger";
+
+export type AnnouncementAnimation =
+  | "none"
+  | "slide-right"
+  | "slide-left"
+  | "slide-up"
+  | "slide-down"
+  | "fade"
+  | "zoom-in"
+  | "zoom-out"
+  | "bounce"
+  | "pulse"
+  | "shake"
+  | "swing"
+  | "flip"
+  | "rotate"
+  | "float"
+  | "orbit";
+
+export type AnnouncementFont =
+  | "default"
+  | "cairo"
+  | "amiri"
+  | "scheherazade"
+  | "aref"
+  | "reem"
+  | "lateef"
+  | "naskh"
+  | "rakkas"
+  | "lalezar";
 
 export interface Announcement {
   id: string;
   title: string;
   body: string;
   tone: AnnouncementTone;
+  animation: AnnouncementAnimation;
+  font: AnnouncementFont;
   active: boolean;
   pinned: boolean;
   createdAt?: unknown;

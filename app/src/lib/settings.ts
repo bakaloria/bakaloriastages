@@ -23,12 +23,59 @@ export const DEFAULT_SUBJECT_SETTINGS: SubjectSettings = {
   lockMessage: "",
 };
 
+export const DEFAULT_BACKGROUND_COLOR = "#f7f3ea";
+
+export const BACKGROUND_PRESETS = [
+  { label: "ورقي دافئ", value: "#f7f3ea" },
+  { label: "أبيض هادئ", value: "#f5f7f6" },
+  { label: "رملي فاتح", value: "#f6efe3" },
+  { label: "أزرق سماوي", value: "#eaf2f8" },
+  { label: "أخضر نعناعي", value: "#eaf5ef" },
+  { label: "وردي ناعم", value: "#faeef0" },
+  { label: "بنفسجي فاتح", value: "#f1edf8" },
+  { label: "رمادي فضي", value: "#eef1f2" },
+] as const;
+
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   stagesLocked: false,
   registrationsOpen: true,
   lockMessage: "",
   maintenanceMessage: "",
+  backgroundColor: DEFAULT_BACKGROUND_COLOR,
 };
+
+export function normalizeBackgroundColor(value: unknown): string {
+  const color = String(value ?? "").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : DEFAULT_BACKGROUND_COLOR;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  return [
+    Number.parseInt(hex.slice(1, 3), 16),
+    Number.parseInt(hex.slice(3, 5), 16),
+    Number.parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function shiftColor(hex: string, amount: number): string {
+  const channels = hexToRgb(hex).map((channel) =>
+    Math.max(0, Math.min(255, channel + amount)),
+  );
+  return `#${channels.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function applyBackgroundColor(value: unknown): void {
+  if (typeof document === "undefined") return;
+  const color = normalizeBackgroundColor(value);
+  const [r, g, b] = hexToRgb(color);
+  const root = document.documentElement;
+  root.style.setProperty("--bg", color);
+  root.style.setProperty("--bg-rgb", `${r}, ${g}, ${b}`);
+  root.style.setProperty(
+    "--bg-deep",
+    color === DEFAULT_BACKGROUND_COLOR ? "#efe9dc" : shiftColor(color, -14),
+  );
+}
 
 function clamp(value: unknown, min: number, max: number, fallback: number): number {
   const parsed = Number(value);
@@ -113,6 +160,7 @@ export function normalizeGlobalSettings(data: Partial<GlobalSettings> | null): G
     registrationsOpen: merged.registrationsOpen !== false,
     lockMessage: String(merged.lockMessage ?? "").trim(),
     maintenanceMessage: String(merged.maintenanceMessage ?? "").trim(),
+    backgroundColor: normalizeBackgroundColor(merged.backgroundColor),
   };
 }
 

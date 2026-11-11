@@ -329,7 +329,10 @@ await admin.firestore().doc("users/<UID>").set(
   "registrationsOpen": true,
   "lockMessage": "",
   "maintenanceMessage": "",
-  "backgroundColor": "#f7f3ea"
+  "backgroundColor": "#f7f3ea",
+  "certificateClaimsEnabled": false,
+  "certificateNotice": "الشهادة الرسمية تحتاج إلى اعتماد من الجهات المختصة...",
+  "finalExamReminder": "من اقترب من إتمام المراجعة أصبح أقرب إلى النجاح في امتحان الشهادة الأخير؛ فليواصل بثبات."
 }
 ```
 
@@ -339,6 +342,11 @@ await admin.firestore().doc("users/<UID>").set(
 - `backgroundColor`: لون خلفية المنصة بصيغة HEX، ويُطبَّق مباشرة على كل الصفحات.
   تُتحقق الصلاحية من الصيغة، وأي قيمة غير صحيحة تعود إلى اللون الافتراضي
   `#f7f3ea`. يضبطه المدير من تبويب **الإعلانات والمظهر**.
+- `certificateClaimsEnabled`: معطّل افتراضيًا. عند إغلاقه يعرض التطبيق **سجل إتمام
+  تدريبي** ولا يدّعي منح شهادة. لا يُفعّل إلا بعد اعتماد الجهات المختصة.
+- `certificateNotice`: تنويه الشهادة والاعتماد الظاهر في صفحة المادة وسجل الإتمام.
+- `finalExamReminder`: تذكير بامتحان الشهادة الأخير يظهر في الرئيسية وحساب الطالب
+  وعند اكتمال المراجعة.
 
 ### `announcements/{announcementId}`
 
@@ -349,6 +357,11 @@ await admin.firestore().doc("users/<UID>").set(
   "tone": "info",
   "animation": "slide-right",
   "font": "default",
+  "speed": "normal",
+  "loop": true,
+  "background": "#eaf7f0",
+  "pattern": "arabesque",
+  "textColor": "",
   "active": true,
   "pinned": false,
   "expiresAt": null,
@@ -361,10 +374,18 @@ await admin.firestore().doc("users/<UID>").set(
 - `animation`: إحدى 15 حركة، منها `slide-right` و`slide-left` و`orbit` و`pulse`
   و`flip` و`bounce` و`zoom`، أو `none` لتعطيل الحركة.
 - `font`: `default` أو خط عربي من الخطوط المتاحة، ومنها خطوط زخرفية/إسلامية
-  مثل `aref` و`amiri` و`scheherazade` و`lateef` و`reem` و`naskh` و`rakkas`.
-- تظهر الإعلانات النشطة وغير المنتهية في رئيسية الطالب ومركز الإشعارات.
-- الإعلان الجديد يبدأ افتراضيًا بـ `slide-right` و`default`. القيم القديمة أو غير
-  المعروفة تُصحَّح بأمان إلى `none` و`default` بدل كسر الصفحة.
+  مثل `aref` و`amiri` و`scheherazade` و`lateef` و`reem` و`naskh` و`rakkas`
+  و`messiri` و`changa` و`harmattan` و`kufi` و`nastaliq`.
+- `speed`: `slow` أو `normal` أو `fast`.
+- `loop`: عند `true` تستمر حركة الدخول كطفو هادئ بدل أن تتوقف بعد أول تشغيل.
+- `background`: لون HEX مخصص لخلفية الإعلان، أو فارغ لاستخدام لون النوع.
+- `pattern`: `none` أو `arabesque` أو `geometric` أو `dots` أو `grid` أو `stars`
+  أو `waves`.
+- `textColor`: لون نص مخصص، أو فارغ لاختيار لون مقروء تلقائيًا حسب الخلفية.
+- تظهر الإعلانات النشطة وغير المنتهية في رئيسية الطالب ومركز الإشعارات، وتتحدث
+  مباشرة عند حفظ تعديل من لوحة المدير.
+- الإعلان الجديد يبدأ افتراضيًا بـ `slide-right` و`default` و`speed: normal`
+  و`loop: true`. القيم القديمة أو غير المعروفة تُصحَّح بأمان بدل كسر الصفحة.
 
 ### `admin_audit/{entryId}`
 
@@ -459,7 +480,7 @@ GCLOUD_PROJECT=bakaloriarace node functions/scripts/import-bank.mjs bank.json
 | `markStageFeedbackSeen` | `attemptId` | تأكيد أن الطالب شاهد الإجابة النموذجية، ويرفض المتابعة قبل اكتمال التقييم الذاتي |
 | `getSubjectProgress` | `subjectId` | التقدم الكلي وحسب الوحدات |
 | `getLeaderboard` | `subjectId` | ترتيب الطلاب في المادة |
-| `claimCertificate` | `subjectId` | شهادة بعد اكتمال التغطية والإتقان |
+| `claimCertificate` | `subjectId` | سجل إتمام تدريبي بعد اكتمال التغطية والإتقان (الشهادة الرسمية تحتاج اعتمادًا) |
 
 ### تسجيل الدخول من الواجهة
 

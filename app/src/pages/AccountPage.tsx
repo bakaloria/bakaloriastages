@@ -12,7 +12,7 @@ import { useAuth } from "../context/AuthContext";
 import { branchLabel } from "../lib/format";
 
 export function AccountPage() {
-  const { profile, logout } = useAuth();
+  const { profile, logout, settings } = useAuth();
 
   return (
     <div className="page account-page">
@@ -93,7 +93,15 @@ export function AccountPage() {
           <ul className="plain-list">
             <li><CheckIcon /> كل مرحلة تضيف أسئلة جديدة وتراجع أسئلة سابقة.</li>
             <li><CheckIcon /> بعد التسليم تظهر الإجابة النموذجية.</li>
-            <li><CheckIcon /> أكمل التغطية والإتقان لاستلام الشهادة.</li>
+            <li>
+              <CheckIcon />{" "}
+              {settings.certificateClaimsEnabled
+                ? "أكمل التغطية والإتقان لعرض الشهادة."
+                : "أكمل التغطية والإتقان استعدادًا لامتحان الشهادة."}
+            </li>
+            {settings.finalExamReminder ? (
+              <li><CheckIcon /> {settings.finalExamReminder}</li>
+            ) : null}
           </ul>
         </article>
       </section>

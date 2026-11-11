@@ -111,7 +111,7 @@ export function LoginPage() {
           <span className="dot" />
           <span>مراجعة متباعدة</span>
           <span className="dot" />
-          <span>شهادة إتمام</span>
+          <span>استعداد لامتحان الشهادة</span>
         </div>
       </section>
 

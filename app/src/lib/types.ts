@@ -208,6 +208,9 @@ export interface GlobalSettings {
   lockMessage: string;
   maintenanceMessage: string;
   backgroundColor: string;
+  certificateClaimsEnabled: boolean;
+  certificateNotice: string;
+  finalExamReminder: string;
 }
 
 export type AnnouncementTone = "info" | "success" | "warning" | "danger";
@@ -240,7 +243,28 @@ export type AnnouncementFont =
   | "lateef"
   | "naskh"
   | "rakkas"
-  | "lalezar";
+  | "lalezar"
+  | "messiri"
+  | "changa"
+  | "harmattan"
+  | "mada"
+  | "marhey"
+  | "kufi"
+  | "readex"
+  | "alexandria"
+  | "rubik"
+  | "nastaliq";
+
+export type AnnouncementSpeed = "slow" | "normal" | "fast";
+
+export type AnnouncementPattern =
+  | "none"
+  | "arabesque"
+  | "geometric"
+  | "dots"
+  | "grid"
+  | "stars"
+  | "waves";
 
 export interface Announcement {
   id: string;
@@ -249,6 +273,11 @@ export interface Announcement {
   tone: AnnouncementTone;
   animation: AnnouncementAnimation;
   font: AnnouncementFont;
+  speed: AnnouncementSpeed;
+  background: string;
+  pattern: AnnouncementPattern;
+  textColor: string;
+  loop: boolean;
   active: boolean;
   pinned: boolean;
   createdAt?: unknown;

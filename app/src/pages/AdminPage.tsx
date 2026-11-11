@@ -19,6 +19,7 @@ import {
   setDoc,
 } from "firebase/firestore";
 import {
+  AwardIcon,
   BellIcon,
   BookIcon,
   CheckIcon,
@@ -38,8 +39,12 @@ import { QuestionBankPanel } from "../components/QuestionBankPanel";
 import { useAuth } from "../context/AuthContext";
 import {
   ANNOUNCEMENT_ANIMATIONS,
+  ANNOUNCEMENT_BACKGROUNDS,
   ANNOUNCEMENT_FONTS,
+  ANNOUNCEMENT_PATTERNS,
+  ANNOUNCEMENT_SPEEDS,
   announcementClasses,
+  announcementStyle,
   fetchAllAnnouncements,
   logAdminAction,
   removeAnnouncement,
@@ -65,6 +70,8 @@ import type {
   Announcement,
   AnnouncementAnimation,
   AnnouncementFont,
+  AnnouncementPattern,
+  AnnouncementSpeed,
   AnnouncementTone,
   Branch,
   GlobalSettings,
@@ -89,6 +96,11 @@ interface AnnouncementDraft {
   tone: AnnouncementTone;
   animation: AnnouncementAnimation;
   font: AnnouncementFont;
+  speed: AnnouncementSpeed;
+  background: string;
+  pattern: AnnouncementPattern;
+  textColor: string;
+  loop: boolean;
   active: boolean;
   pinned: boolean;
   expiresAt: string;
@@ -100,6 +112,11 @@ const EMPTY_ANNOUNCEMENT: AnnouncementDraft = {
   tone: "info",
   animation: "slide-right",
   font: "default",
+  speed: "normal",
+  background: "",
+  pattern: "none",
+  textColor: "",
+  loop: true,
   active: true,
   pinned: false,
   expiresAt: "",
@@ -164,6 +181,7 @@ export function AdminPage() {
   const [notice, setNotice] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
   const [draft, setDraft] = useState<AnnouncementDraft>(EMPTY_ANNOUNCEMENT);
+  const [previewNonce, setPreviewNonce] = useState(0);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -308,7 +326,9 @@ export function AdminPage() {
       await logAdminAction(
         profile,
         "settings.global",
-        `${saved.stagesLocked ? "إغلاق المراحل" : "فتح المراحل"} • خلفية ${saved.backgroundColor}`,
+        `${saved.stagesLocked ? "إغلاق المراحل" : "فتح المراحل"} • خلفية ${saved.backgroundColor} • ${
+          saved.certificateClaimsEnabled ? "صيغة الشهادة مفعّلة" : "سجل إتمام تدريبي"
+        }`,
       );
       showNotice("تم حفظ الإعدادات العامة.");
     } catch (caught) {
@@ -351,10 +371,37 @@ export function AdminPage() {
       tone: announcement.tone,
       animation: announcement.animation,
       font: announcement.font,
+      speed: announcement.speed,
+      background: announcement.background,
+      pattern: announcement.pattern,
+      textColor: announcement.textColor,
+      loop: announcement.loop,
       active: announcement.active,
       pinned: announcement.pinned,
       expiresAt: dateInputValue(announcement.expiresAt),
     });
+    setPreviewNonce((value) => value + 1);
+    setTab("announcements");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function duplicateAnnouncement(announcement: Announcement) {
+    setDraft({
+      title: `${announcement.title} (نسخة)`,
+      body: announcement.body,
+      tone: announcement.tone,
+      animation: announcement.animation,
+      font: announcement.font,
+      speed: announcement.speed,
+      background: announcement.background,
+      pattern: announcement.pattern,
+      textColor: announcement.textColor,
+      loop: announcement.loop,
+      active: false,
+      pinned: announcement.pinned,
+      expiresAt: "",
+    });
+    setPreviewNonce((value) => value + 1);
     setTab("announcements");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -377,6 +424,11 @@ export function AdminPage() {
           tone: draft.tone,
           animation: draft.animation,
           font: draft.font,
+          speed: draft.speed,
+          background: draft.background,
+          pattern: draft.pattern,
+          textColor: draft.textColor,
+          loop: draft.loop,
           active: draft.active,
           pinned: draft.pinned,
           expiresAt: draft.expiresAt
@@ -655,6 +707,11 @@ export function AdminPage() {
               <strong>{formatNumber(stats.attempts)}</strong>
               <small>محاولة مرحلة مسجلة</small>
             </div>
+            <div className="stat-card">
+              <span className="stat-card__label">الإعلانات النشطة</span>
+              <strong>{formatNumber(announcements.filter((item) => item.active).length)}</strong>
+              <small>رسالة ظاهرة للطلاب الآن</small>
+            </div>
           </div>
 
           <div className="admin-split">
@@ -742,6 +799,66 @@ export function AdminPage() {
                   placeholder="مثال: ننصح بمراجعة الوحدة الأولى قبل بدء جلسة اليوم."
                 />
                 <small>اتركها فارغة لإخفاء التنبيه. تظهر مع الإعلانات النشطة.</small>
+              </label>
+
+              <div className="admin-settings-divider">
+                <span className="eyebrow"><AwardIcon /> الشهادة والاعتماد</span>
+                <p className="muted small">
+                  الشهادة الرسمية تحتاج إلى اعتماد من الجهات المختصة. اترك الخيار مغلقًا حتى
+                  يصلك الاعتماد، وسيظهر للطلاب سجل إتمام تدريبي فقط.
+                </p>
+              </div>
+
+              <label className="admin-switch">
+                <input
+                  type="checkbox"
+                  checked={globalSettings.certificateClaimsEnabled}
+                  onChange={(event) =>
+                    setGlobalSettings((previous) => ({
+                      ...previous,
+                      certificateClaimsEnabled: event.target.checked,
+                    }))
+                  }
+                />
+                <span className="admin-switch__track" />
+                <span>
+                  <strong>تفعيل صيغة الشهادة بعد الاعتماد</strong>
+                  <small>عند الإغلاق تظهر كلمة «سجل إتمام» بدل «شهادة» في واجهة الطالب.</small>
+                </span>
+              </label>
+
+              <label className="field">
+                <span>تنويه الشهادة والاعتماد</span>
+                <textarea
+                  className="textarea"
+                  rows={3}
+                  value={globalSettings.certificateNotice}
+                  onChange={(event) =>
+                    setGlobalSettings((previous) => ({
+                      ...previous,
+                      certificateNotice: event.target.value,
+                    }))
+                  }
+                  placeholder="وضّح أن الشهادة الرسمية تحتاج إلى اعتماد."
+                />
+                <small>يظهر أسفل سجل الإتمام وفي صفحة المادة بعد اكتمال المراجعة.</small>
+              </label>
+
+              <label className="field">
+                <span>تذكير الامتحان الأخير</span>
+                <textarea
+                  className="textarea"
+                  rows={2}
+                  value={globalSettings.finalExamReminder}
+                  onChange={(event) =>
+                    setGlobalSettings((previous) => ({
+                      ...previous,
+                      finalExamReminder: event.target.value,
+                    }))
+                  }
+                  placeholder="تذكير للطلاب الذين اقتربوا من النجاح في امتحان الشهادة الأخير."
+                />
+                <small>يظهر في الرئيسية وعند اكتمال مراجعة المادة.</small>
               </label>
 
               <div className="field">
@@ -1035,7 +1152,7 @@ export function AdminPage() {
                         )
                       }
                     />
-                    <small>100% تعني إتقان كل أسئلة المادة للشهادة.</small>
+                    <small>100% تعني إتقان كل أسئلة المادة قبل سجل الإتمام.</small>
                   </label>
                 </div>
 
@@ -1065,7 +1182,7 @@ export function AdminPage() {
                     <span className="admin-switch__track" />
                     <span>
                       <strong>اشتراط الامتحان الختامي</strong>
-                      <small>لن تُصدر الشهادة قبل اجتيازه.</small>
+                      <small>شرط إضافي قبل اعتماد سجل الإتمام النهائي.</small>
                     </span>
                   </label>
                 </div>
@@ -1212,16 +1329,153 @@ export function AdminPage() {
                     ))}
                   </select>
                 </label>
+                <label className="field">
+                  <span>سرعة الحركة</span>
+                  <select
+                    className="input"
+                    value={draft.speed}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        speed: event.target.value as AnnouncementSpeed,
+                      }))
+                    }
+                  >
+                    {ANNOUNCEMENT_SPEEDS.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>زخرفة الخلفية</span>
+                  <select
+                    className="input"
+                    value={draft.pattern}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        pattern: event.target.value as AnnouncementPattern,
+                      }))
+                    }
+                  >
+                    {ANNOUNCEMENT_PATTERNS.map((option) => (
+                      <option value={option.value} key={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>لون النص</span>
+                  <div className="admin-inline-color">
+                    <input
+                      className="input admin-color-input"
+                      type="color"
+                      value={draft.textColor || "#122a28"}
+                      onChange={(event) =>
+                        setDraft((previous) => ({ ...previous, textColor: event.target.value }))
+                      }
+                    />
+                    <button
+                      className="button button--ghost button--sm"
+                      type="button"
+                      onClick={() =>
+                        setDraft((previous) => ({ ...previous, textColor: "" }))
+                      }
+                    >
+                      تلقائي
+                    </button>
+                  </div>
+                  <small>اتركه تلقائيًا لاختيار لون مقروء حسب الخلفية.</small>
+                </label>
+              </div>
+
+              <div className="field">
+                <span>خلفية الإعلان</span>
+                <div className="theme-swatches">
+                  {ANNOUNCEMENT_BACKGROUNDS.map((preset) => (
+                    <button
+                      key={preset.value || "default"}
+                      type="button"
+                      className={`theme-swatch theme-swatch--announcement${
+                        draft.background === preset.value ? " is-selected" : ""
+                      }`}
+                      style={{
+                        backgroundColor: preset.value || undefined,
+                        backgroundImage: preset.value
+                          ? undefined
+                          : "linear-gradient(135deg, #fffdf9, #f1ece1)",
+                      }}
+                      title={preset.label}
+                      aria-label={preset.label}
+                      onClick={() =>
+                        setDraft((previous) => ({
+                          ...previous,
+                          background: preset.value,
+                        }))
+                      }
+                    />
+                  ))}
+                  <label className="theme-swatch theme-swatch--custom" title="لون خلفية مخصص">
+                    <input
+                      type="color"
+                      value={draft.background || "#fffaf0"}
+                      onChange={(event) =>
+                        setDraft((previous) => ({
+                          ...previous,
+                          background: event.target.value,
+                        }))
+                      }
+                    />
+                    <span>+</span>
+                  </label>
+                </div>
+                <small>الخلفيات الداكنة تحوّل النص تلقائيًا إلى الأبيض ما لم تختر لونًا يدويًا.</small>
+              </div>
+
+              <div className="admin-toggle-row">
+                <label className="admin-switch admin-switch--compact">
+                  <input
+                    type="checkbox"
+                    checked={draft.loop}
+                    onChange={(event) =>
+                      setDraft((previous) => ({ ...previous, loop: event.target.checked }))
+                    }
+                  />
+                  <span className="admin-switch__track" />
+                  <span>
+                    <strong>حركة مستمرة</strong>
+                    <small>تُبقي الإعلان متحركًا بدل تشغيل الحركة مرة واحدة.</small>
+                  </span>
+                </label>
               </div>
 
               <div className="announcement-preview">
-                <span className="eyebrow"><SparklesIcon /> معاينة مباشرة</span>
+                <div className="announcement-preview__head">
+                  <span className="eyebrow"><SparklesIcon /> معاينة مباشرة</span>
+                  <button
+                    className="button button--ghost button--sm"
+                    type="button"
+                    onClick={() => setPreviewNonce((value) => value + 1)}
+                  >
+                    <RefreshIcon />
+                    إعادة الحركة
+                  </button>
+                </div>
                 <article
                   className={announcementClasses({
                     tone: draft.tone,
                     animation: draft.animation,
                     font: draft.font,
+                    speed: draft.speed,
+                    pattern: draft.pattern,
+                    background: draft.background,
+                    loop: draft.loop,
                   })}
+                  style={announcementStyle(draft)}
+                  key={`${previewNonce}-${draft.animation}-${draft.speed}-${draft.font}-${draft.pattern}-${draft.background}-${draft.textColor}-${draft.loop}`}
                 >
                   <span className="notice__icon"><MegaphoneIcon /></span>
                   <div className="notice__content">
@@ -1302,6 +1556,16 @@ export function AdminPage() {
                         {ANNOUNCEMENT_FONTS.find((item) => item.value === announcement.font)?.label ??
                           "الخط الافتراضي"}
                       </span>
+                      <span className="badge badge--soft">
+                        {ANNOUNCEMENT_SPEEDS.find((item) => item.value === announcement.speed)
+                          ?.label ?? "متوسطة"}
+                      </span>
+                      {announcement.loop ? (
+                        <span className="badge badge--green">مستمرة</span>
+                      ) : null}
+                      {announcement.background || announcement.pattern !== "none" ? (
+                        <span className="badge badge--gold">خلفية مزخرفة</span>
+                      ) : null}
                       <span className="muted small">{formatDateTime(announcement.createdAt)}</span>
                     </div>
                     <h3>{announcement.title}</h3>
@@ -1313,6 +1577,13 @@ export function AdminPage() {
                         onClick={() => editAnnouncement(announcement)}
                       >
                         تعديل
+                      </button>
+                      <button
+                        className="button button--ghost button--sm"
+                        type="button"
+                        onClick={() => duplicateAnnouncement(announcement)}
+                      >
+                        نسخ
                       </button>
                       <button
                         className="button button--danger-ghost button--sm"

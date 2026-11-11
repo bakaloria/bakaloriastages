@@ -16,6 +16,7 @@ import {
 } from "../components/Icons";
 import { InlineLoader } from "../components/Loading";
 import { ProgressRing } from "../components/ProgressRing";
+import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { db } from "../lib/firebase";
 import { errorMessage } from "../lib/errors";
@@ -31,6 +32,7 @@ import type { Subject, SubjectProgress } from "../lib/types";
 export function SubjectPage() {
   const { subjectId = "" } = useParams();
   const navigate = useNavigate();
+  const { settings } = useAuth();
   const [subject, setSubject] = useState<Subject | null>(null);
   const [progress, setProgress] = useState<SubjectProgress | null>(null);
   const [enrolled, setEnrolled] = useState<boolean | null>(null);
@@ -196,10 +198,21 @@ export function SubjectPage() {
             <SparklesIcon />
           </button>
         ) : canClaim ? (
-          <Link to={`/certificate/${subject.id}`} className="button button--gold button--lg">
-            <AwardIcon />
-            استلم شهادة الإتمام
-          </Link>
+          <div className="completion-callout">
+            <span className="completion-callout__icon"><AwardIcon /></span>
+            <div className="completion-callout__text">
+              <strong>أكملت مراجعة المادة</strong>
+              <span>
+                {settings.finalExamReminder ||
+                  "واصل المراجعة استعدادًا لامتحان الشهادة الأخير."}
+              </span>
+              <small>{settings.certificateNotice}</small>
+            </div>
+            <Link to={`/completion/${subject.id}`} className="button button--gold">
+              <AwardIcon />
+              {settings.certificateClaimsEnabled ? "عرض شهادة الإتمام" : "عرض سجل الإتمام"}
+            </Link>
+          </div>
         ) : stagesLocked ? (
           <div className="locked-action locked-action--admin">
             <span className="locked-action__icon"><LockIcon /></span>
@@ -264,7 +277,13 @@ export function SubjectPage() {
           <strong className="stat-card__status">
             {completed ? "مكتملة" : enrolled ? "قيد التقدم" : "لم تنضم بعد"}
           </strong>
-          <small>{completed ? "يمكنك استلام الشهادة" : "أكمل التغطية والإتقان"}</small>
+          <small>
+            {completed
+              ? settings.certificateClaimsEnabled
+                ? "يمكنك عرض الشهادة"
+                : "مراجعة المادة مكتملة"
+              : "أكمل التغطية والإتقان"}
+          </small>
         </div>
       </div>
 

@@ -30,6 +30,7 @@ function AppRoutes() {
         <Route path="/leaderboard/:subjectId" element={<LeaderboardPage />} />
         <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/admin" element={<AdminPage />} />
+        <Route path="/completion/:subjectId" element={<CertificatePage />} />
         <Route path="/certificate/:subjectId" element={<CertificatePage />} />
         <Route path="/account" element={<AccountPage />} />
       </Route>

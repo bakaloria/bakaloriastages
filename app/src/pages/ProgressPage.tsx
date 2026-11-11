@@ -32,7 +32,7 @@ interface EnrollmentRow {
 }
 
 export function ProgressPage() {
-  const { profile, user } = useAuth();
+  const { profile, user, settings } = useAuth();
   const [subjects, setSubjects] = useState<Record<string, Subject>>({});
   const [enrollments, setEnrollments] = useState<EnrollmentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -192,7 +192,14 @@ export function ProgressPage() {
                     {locked ? (
                       <span className="inline-meta"><ClockIcon /> التالي بعد <Countdown target={nextAvailableAt} /></span>
                     ) : (
-                      <span className="inline-meta"><SparklesIcon /> {completed ? "استلم شهادتك" : "تابع المرحلة التالية"}</span>
+                      <span className="inline-meta">
+                        <SparklesIcon />{" "}
+                        {completed
+                          ? settings.certificateClaimsEnabled
+                            ? "عرض شهادتك"
+                            : "راجع سجل إتمامك"
+                          : "تابع المرحلة التالية"}
+                      </span>
                     )}
                     <ChevronLeftIcon />
                   </div>

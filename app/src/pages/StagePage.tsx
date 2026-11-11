@@ -15,6 +15,7 @@ import {
   XIcon,
 } from "../components/Icons";
 import { InlineLoader } from "../components/Loading";
+import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { errorMessage } from "../lib/errors";
 import {
@@ -75,6 +76,7 @@ function correctOptionIndex(modelAnswer: unknown): number | null {
 export function StagePage() {
   const { subjectId = "" } = useParams();
   const navigate = useNavigate();
+  const { settings } = useAuth();
   const [phase, setPhase] = useState<Phase>("loading");
   const [stage, setStage] = useState<StagePayload | null>(null);
   const [results, setResults] = useState<GradedAnswer[]>([]);
@@ -372,10 +374,14 @@ export function StagePage() {
           <span className="eyebrow">أكملت المادة</span>
           <h1>تغطية كاملة وإتقان!</h1>
           <p>لقد مررت على كل أسئلة المادة ووصلت إلى نسبة الإتقان المطلوبة.</p>
+          {settings.finalExamReminder ? (
+            <p className="muted small">{settings.finalExamReminder}</p>
+          ) : null}
+          <p className="muted small">{settings.certificateNotice}</p>
           <div className="button-row">
-            <Link to={`/certificate/${subjectId}`} className="button button--gold">
+            <Link to={`/completion/${subjectId}`} className="button button--gold">
               <AwardIcon />
-              استلم الشهادة
+              {settings.certificateClaimsEnabled ? "عرض الشهادة" : "عرض سجل الإتمام"}
             </Link>
             <Link to={`/subject/${subjectId}`} className="button button--ghost">
               بطاقة المادة

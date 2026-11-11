@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import {
   addDoc,
   collection,
@@ -5,18 +6,22 @@ import {
   doc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query,
   serverTimestamp,
   setDoc,
   Timestamp,
   where,
+  type Unsubscribe,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import type {
   Announcement,
   AnnouncementAnimation,
   AnnouncementFont,
+  AnnouncementPattern,
+  AnnouncementSpeed,
   AnnouncementTone,
   Profile,
 } from "./types";
@@ -61,10 +66,63 @@ export const ANNOUNCEMENT_FONTS: Array<{
   { value: "naskh", label: "نسخ حديث", sample: "قراءة مريحة" },
   { value: "rakkas", label: "رقّاص", sample: "زخرفة قوية" },
   { value: "lalezar", label: "لاله زار", sample: "عنوان لافت" },
+  { value: "messiri", label: "المسيري", sample: "زخرفة عربية أنيقة" },
+  { value: "changa", label: "شنقا", sample: "حروف إسلامية هندسية" },
+  { value: "harmattan", label: "هرمتان", sample: "نسخ إسلامي واضح" },
+  { value: "mada", label: "مدى", sample: "خط عصري بسيط" },
+  { value: "marhey", label: "مرحى", sample: "زخرفة مرحة" },
+  { value: "kufi", label: "كوفي نوتو", sample: "كوفي هندسي" },
+  { value: "readex", label: "ريدكس", sample: "قراءة عربية حديثة" },
+  { value: "alexandria", label: "الإسكندرية", sample: "عنوان عربي قوي" },
+  { value: "rubik", label: "روبيك", sample: "خط عصري متوازن" },
+  { value: "nastaliq", label: "نستعليق", sample: "زخرفة خطية فارسية" },
+];
+
+export const ANNOUNCEMENT_SPEEDS: Array<{
+  value: AnnouncementSpeed;
+  label: string;
+}> = [
+  { value: "slow", label: "هادئة" },
+  { value: "normal", label: "متوسطة" },
+  { value: "fast", label: "سريعة" },
+];
+
+export const ANNOUNCEMENT_BACKGROUNDS: Array<{
+  value: string;
+  label: string;
+}> = [
+  { value: "", label: "افتراضي حسب النوع" },
+  { value: "#fffaf0", label: "ورقي دافئ" },
+  { value: "#eaf7f0", label: "نعناعي" },
+  { value: "#eaf4fb", label: "سماوي" },
+  { value: "#fdeef2", label: "وردي ناعم" },
+  { value: "#f3edfb", label: "لافندر" },
+  { value: "#fbf1d9", label: "ذهبي فاتح" },
+  { value: "#f6efe3", label: "رملي" },
+  { value: "#e3f4ec", label: "زمردي" },
+  { value: "#17332f", label: "أخضر ليلي" },
+  { value: "#202a2a", label: "فحمي" },
+  { value: "#3a1622", label: "خمري" },
+  { value: "#13283d", label: "أزرق داكن" },
+];
+
+export const ANNOUNCEMENT_PATTERNS: Array<{
+  value: AnnouncementPattern;
+  label: string;
+}> = [
+  { value: "none", label: "بدون زخرفة" },
+  { value: "arabesque", label: "أرابيسك إسلامي" },
+  { value: "geometric", label: "هندسي إسلامي" },
+  { value: "dots", label: "نقاط" },
+  { value: "grid", label: "شبكة" },
+  { value: "stars", label: "نجوم" },
+  { value: "waves", label: "موجات" },
 ];
 
 const ANIMATION_VALUES = new Set(ANNOUNCEMENT_ANIMATIONS.map((item) => item.value));
 const FONT_VALUES = new Set(ANNOUNCEMENT_FONTS.map((item) => item.value));
+const SPEED_VALUES = new Set(ANNOUNCEMENT_SPEEDS.map((item) => item.value));
+const PATTERN_VALUES = new Set(ANNOUNCEMENT_PATTERNS.map((item) => item.value));
 
 function asAnimation(value: unknown): AnnouncementAnimation {
   return ANIMATION_VALUES.has(value as AnnouncementAnimation)
@@ -76,6 +134,31 @@ function asFont(value: unknown): AnnouncementFont {
   return FONT_VALUES.has(value as AnnouncementFont)
     ? (value as AnnouncementFont)
     : "default";
+}
+
+function asSpeed(value: unknown): AnnouncementSpeed {
+  return SPEED_VALUES.has(value as AnnouncementSpeed)
+    ? (value as AnnouncementSpeed)
+    : "normal";
+}
+
+function asPattern(value: unknown): AnnouncementPattern {
+  return PATTERN_VALUES.has(value as AnnouncementPattern)
+    ? (value as AnnouncementPattern)
+    : "none";
+}
+
+export function normalizeAnnouncementColor(value: unknown): string {
+  const color = String(value ?? "").trim().toLowerCase();
+  return /^#[0-9a-f]{6}$/.test(color) ? color : "";
+}
+
+function readableTextColor(background: string): string {
+  const red = Number.parseInt(background.slice(1, 3), 16);
+  const green = Number.parseInt(background.slice(3, 5), 16);
+  const blue = Number.parseInt(background.slice(5, 7), 16);
+  const luminance = (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+  return luminance < 0.55 ? "#ffffff" : "#122a28";
 }
 
 export function announcementFromDoc(
@@ -93,6 +176,11 @@ export function announcementFromDoc(
     tone,
     animation: asAnimation(data.animation),
     font: asFont(data.font),
+    speed: asSpeed(data.speed ?? data.animationSpeed),
+    background: normalizeAnnouncementColor(data.background ?? data.backgroundColor),
+    pattern: asPattern(data.pattern ?? data.backgroundPattern),
+    textColor: normalizeAnnouncementColor(data.textColor),
+    loop: data.loop !== false && data.animationLoop !== false,
     active: data.active !== false,
     pinned: Boolean(data.pinned),
     createdAt: data.createdAt,
@@ -103,14 +191,55 @@ export function announcementFromDoc(
 }
 
 export function announcementClasses(
-  announcement: Pick<Announcement, "tone" | "animation" | "font">,
+  announcement: Pick<
+    Announcement,
+    "tone" | "animation" | "font" | "speed" | "pattern" | "loop" | "background"
+  >,
 ): string {
   return [
     "notice",
     `notice--${announcement.tone}`,
     `notice--anim-${announcement.animation}`,
     `notice--font-${announcement.font}`,
-  ].join(" ");
+    `notice--speed-${announcement.speed}`,
+    `notice--pattern-${announcement.pattern}`,
+    announcement.background ? "notice--custom-bg" : "",
+    announcement.loop ? "notice--loop" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+export function announcementStyle(
+  announcement: Pick<Announcement, "background" | "textColor">,
+): CSSProperties {
+  const style: CSSProperties = {};
+  if (announcement.background) {
+    style.backgroundColor = announcement.background;
+    if (!announcement.textColor) {
+      style.color = readableTextColor(announcement.background);
+    }
+  }
+  if (announcement.textColor) style.color = announcement.textColor;
+  return style;
+}
+
+export function announcementRenderKey(
+  announcement: Pick<
+    Announcement,
+    "id" | "animation" | "font" | "speed" | "background" | "pattern" | "textColor" | "loop"
+  >,
+): string {
+  return [
+    announcement.id,
+    announcement.animation,
+    announcement.font,
+    announcement.speed,
+    announcement.background,
+    announcement.pattern,
+    announcement.textColor,
+    announcement.loop ? "loop" : "once",
+  ].join("|");
 }
 
 function expiryMillis(value: unknown): number | null {
@@ -129,18 +258,44 @@ export function isAnnouncementLive(announcement: Announcement, now = Date.now())
   return announcement.active && (expires === null || expires > now);
 }
 
-export async function fetchActiveAnnouncements(): Promise<Announcement[]> {
-  if (!db) return [];
-  const snap = await getDocs(
-    query(collection(db, "announcements"), where("active", "==", true), limit(50)),
-  );
-  return snap.docs
-    .map((item) => announcementFromDoc(item.id, item.data()))
+function sortAnnouncements(rows: Announcement[]): Announcement[] {
+  return rows
     .filter((item) => isAnnouncementLive(item))
     .sort((a, b) => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return (expiryMillis(b.createdAt) ?? 0) - (expiryMillis(a.createdAt) ?? 0);
     });
+}
+
+export async function fetchActiveAnnouncements(): Promise<Announcement[]> {
+  if (!db) return [];
+  const snap = await getDocs(
+    query(collection(db, "announcements"), where("active", "==", true), limit(50)),
+  );
+  return sortAnnouncements(
+    snap.docs.map((item) => announcementFromDoc(item.id, item.data())),
+  );
+}
+
+export function subscribeActiveAnnouncements(
+  onRows: (announcements: Announcement[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  if (!db) {
+    onRows([]);
+    return () => undefined;
+  }
+  return onSnapshot(
+    query(collection(db, "announcements"), where("active", "==", true), limit(50)),
+    (snap) => {
+      onRows(
+        sortAnnouncements(snap.docs.map((item) => announcementFromDoc(item.id, item.data()))),
+      );
+    },
+    (error) => {
+      onError?.(error);
+    },
+  );
 }
 
 export async function fetchAllAnnouncements(): Promise<Announcement[]> {
@@ -159,6 +314,11 @@ export async function saveAnnouncement(
     tone: AnnouncementTone;
     animation: AnnouncementAnimation;
     font: AnnouncementFont;
+    speed: AnnouncementSpeed;
+    background: string;
+    pattern: AnnouncementPattern;
+    textColor: string;
+    loop: boolean;
     active: boolean;
     pinned: boolean;
     expiresAt: number | null;
@@ -172,6 +332,11 @@ export async function saveAnnouncement(
     tone: input.tone,
     animation: asAnimation(input.animation),
     font: asFont(input.font),
+    speed: asSpeed(input.speed),
+    background: normalizeAnnouncementColor(input.background),
+    pattern: asPattern(input.pattern),
+    textColor: normalizeAnnouncementColor(input.textColor),
+    loop: input.loop,
     active: input.active,
     pinned: input.pinned,
     expiresAt: input.expiresAt ? Timestamp.fromMillis(input.expiresAt) : null,

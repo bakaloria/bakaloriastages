@@ -5,6 +5,7 @@ import { AwardIcon, CheckIcon, ChevronLeftIcon, SparklesIcon } from "../componen
 import { EmptyState } from "../components/EmptyState";
 import { FullScreenLoader } from "../components/Loading";
 import { BrandMark } from "../components/Layout";
+import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { db } from "../lib/firebase";
 import { errorMessage } from "../lib/errors";
@@ -13,6 +14,8 @@ import type { Certificate, Subject } from "../lib/types";
 
 export function CertificatePage() {
   const { subjectId = "" } = useParams();
+  const { settings } = useAuth();
+  const official = settings.certificateClaimsEnabled;
   const [certificate, setCertificate] = useState<Certificate | null>(null);
   const [subject, setSubject] = useState<Subject | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,13 +47,13 @@ export function CertificatePage() {
     };
   }, [subjectId]);
 
-  if (loading) return <FullScreenLoader label="نصدر شهادتك..." />;
+  if (loading) return <FullScreenLoader label={official ? "نجهز شهادتك..." : "نجهز سجل إتمامك..."} />;
 
   if (error || !certificate) {
     return (
       <div className="page">
         <EmptyState
-          title="الشهادة غير متاحة بعد"
+          title={official ? "الشهادة غير متاحة بعد" : "سجل الإتمام غير متاح بعد"}
           description={error || "أكمل تغطية المادة والإتقان المطلوب أولًا."}
           icon={<AwardIcon />}
           action={
@@ -89,18 +92,24 @@ export function CertificatePage() {
             <BrandMark />
             <span>مراحل البكالوريا</span>
           </div>
-          <span className="certificate__label">شهادة إتمام</span>
+          <span className="certificate__label">
+            {official ? "شهادة إتمام" : "سجل إتمام تدريبي"}
+          </span>
         </header>
 
         <div className="certificate__body">
           <span className="certificate__eyebrow">
             <SparklesIcon />
-            شهادة معتمدة داخل التطبيق
+            {official ? "شهادة إتمام المادة" : "سجل إنجاز غير رسمي"}
           </span>
-          <h1>شهادة إتمام المادة</h1>
-          <p className="certificate__intro">تشهد منصة مراحل البكالوريا بأن الطالب</p>
+          <h1>{official ? "شهادة إتمام المادة" : "سجل إتمام المراجعة"}</h1>
+          <p className="certificate__intro">
+            {official
+              ? "تشهد منصة مراحل البكالوريا بأن الطالب"
+              : "يوثّق هذا السجل أن الطالب"}
+          </p>
           <strong className="certificate__name">{certificate.displayName}</strong>
-          <p className="certificate__intro">قد أكمل بنجاح متطلبات مادة</p>
+          <p className="certificate__intro">قد أكمل متطلبات مراجعة مادة</p>
           <strong className="certificate__subject">{subject?.name || certificate.subjectId}</strong>
 
           <div className="certificate__stats">
@@ -125,19 +134,20 @@ export function CertificatePage() {
             </div>
             <div className="certificate__seal">
               <AwardIcon />
-              <span>مكتملة</span>
+              <span>{official ? "شهادة" : "تدريبي"}</span>
             </div>
             <div>
               <span>الحالة</span>
-              <strong><CheckIcon /> معتمدة</strong>
+              <strong><CheckIcon /> {official ? "شهادة إتمام" : "سجل غير رسمي"}</strong>
             </div>
           </div>
         </div>
       </article>
 
-      <p className="muted small certificate-note">
-        هذه الشهادة توثّق إتمامك داخل التطبيق، وليست شهادة رسمية من وزارة التربية.
-      </p>
+      <p className="muted small certificate-note">{settings.certificateNotice}</p>
+      {settings.finalExamReminder ? (
+        <p className="muted small certificate-note">{settings.finalExamReminder}</p>
+      ) : null}
     </div>
   );
 }

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BellIcon, ChevronLeftIcon, MegaphoneIcon } from "./Icons";
+import { useAuth } from "../context/AuthContext";
 import {
   announcementClasses,
-  fetchActiveAnnouncements,
+  announcementRenderKey,
+  announcementStyle,
+  subscribeActiveAnnouncements,
 } from "../lib/announcements";
-import { fetchGlobalSettings } from "../lib/settings";
 import type { Announcement } from "../lib/types";
 
 export function toneClass(tone: Announcement["tone"]): string {
@@ -13,40 +15,38 @@ export function toneClass(tone: Announcement["tone"]): string {
 }
 
 export function AnnouncementBanner() {
+  const { settings } = useAuth();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [maintenanceMessage, setMaintenanceMessage] = useState("");
 
-  useEffect(() => {
-    let active = true;
-    void Promise.all([fetchActiveAnnouncements(), fetchGlobalSettings()])
-      .then(([rows, settings]) => {
-        if (!active) return;
+  useEffect(
+    () =>
+      subscribeActiveAnnouncements((rows) => {
         setAnnouncements(rows.slice(0, 2));
-        setMaintenanceMessage(settings.maintenanceMessage);
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, []);
+      }),
+    [],
+  );
 
-  if (announcements.length === 0 && !maintenanceMessage) return null;
+  if (announcements.length === 0 && !settings.maintenanceMessage) return null;
 
   return (
     <section className="notice-stack" aria-label="إعلانات المنصة">
-      {maintenanceMessage ? (
+      {settings.maintenanceMessage ? (
         <article className="notice notice--warning">
           <span className="notice__icon">
             <BellIcon />
           </span>
           <div className="notice__content">
             <strong>تنبيه من الإدارة</strong>
-            <p>{maintenanceMessage}</p>
+            <p>{settings.maintenanceMessage}</p>
           </div>
         </article>
       ) : null}
       {announcements.map((announcement) => (
-        <article className={announcementClasses(announcement)} key={announcement.id}>
+        <article
+          className={announcementClasses(announcement)}
+          key={announcementRenderKey(announcement)}
+          style={announcementStyle(announcement)}
+        >
           <span className="notice__icon">
             {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
           </span>

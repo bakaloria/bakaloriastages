@@ -36,12 +36,21 @@ export const BACKGROUND_PRESETS = [
   { label: "رمادي فضي", value: "#eef1f2" },
 ] as const;
 
+export const DEFAULT_CERTIFICATE_NOTICE =
+  "الشهادة الرسمية تحتاج إلى اعتماد من الجهات المختصة. إتمام المراجعة داخل المنصة سجل تدريبي، ولا يعني الحصول على شهادة رسمية.";
+
+export const DEFAULT_FINAL_EXAM_REMINDER =
+  "من اقترب من إتمام المراجعة أصبح أقرب إلى النجاح في امتحان الشهادة الأخير؛ فليواصل بثبات.";
+
 export const DEFAULT_GLOBAL_SETTINGS: GlobalSettings = {
   stagesLocked: false,
   registrationsOpen: true,
   lockMessage: "",
   maintenanceMessage: "",
   backgroundColor: DEFAULT_BACKGROUND_COLOR,
+  certificateClaimsEnabled: false,
+  certificateNotice: DEFAULT_CERTIFICATE_NOTICE,
+  finalExamReminder: DEFAULT_FINAL_EXAM_REMINDER,
 };
 
 export function normalizeBackgroundColor(value: unknown): string {
@@ -161,6 +170,13 @@ export function normalizeGlobalSettings(data: Partial<GlobalSettings> | null): G
     lockMessage: String(merged.lockMessage ?? "").trim(),
     maintenanceMessage: String(merged.maintenanceMessage ?? "").trim(),
     backgroundColor: normalizeBackgroundColor(merged.backgroundColor),
+    certificateClaimsEnabled: merged.certificateClaimsEnabled === true,
+    certificateNotice: String(
+      merged.certificateNotice ?? DEFAULT_CERTIFICATE_NOTICE,
+    ).trim(),
+    finalExamReminder: String(
+      merged.finalExamReminder ?? DEFAULT_FINAL_EXAM_REMINDER,
+    ).trim(),
   };
 }
 

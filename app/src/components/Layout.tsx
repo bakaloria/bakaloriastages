@@ -1,19 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
-import { doc, onSnapshot } from "firebase/firestore";
 import { useAuth } from "../context/AuthContext";
 import { branchLabel } from "../lib/format";
 import {
   fetchActiveAnnouncements,
   unseenAnnouncementCount,
 } from "../lib/announcements";
-import { db } from "../lib/firebase";
-import {
-  applyBackgroundColor,
-  DEFAULT_GLOBAL_SETTINGS,
-  normalizeGlobalSettings,
-} from "../lib/settings";
-import type { GlobalSettings } from "../lib/types";
+import { applyBackgroundColor } from "../lib/settings";
 import {
   BellIcon,
   ChartIcon,
@@ -51,7 +44,7 @@ export function BrandMark() {
 }
 
 export function Layout() {
-  const { profile, logout } = useAuth();
+  const { profile, logout, settings } = useAuth();
   const location = useLocation();
   const [unread, setUnread] = useState(0);
 
@@ -68,25 +61,8 @@ export function Layout() {
   }, [location.pathname]);
 
   useEffect(() => {
-    if (!profile || !db) {
-      applyBackgroundColor(DEFAULT_GLOBAL_SETTINGS.backgroundColor);
-      return;
-    }
-    const unsubscribe = onSnapshot(
-      doc(db, "settings", "global"),
-      (snapshot) => {
-        const settings = normalizeGlobalSettings(
-          snapshot.exists() ? (snapshot.data() as Partial<GlobalSettings>) : null,
-        );
-        applyBackgroundColor(settings.backgroundColor);
-      },
-      () => applyBackgroundColor(DEFAULT_GLOBAL_SETTINGS.backgroundColor),
-    );
-    return () => {
-      unsubscribe();
-      applyBackgroundColor(DEFAULT_GLOBAL_SETTINGS.backgroundColor);
-    };
-  }, [profile]);
+    applyBackgroundColor(settings.backgroundColor);
+  }, [settings.backgroundColor]);
 
   useEffect(() => {
     if (!profile) return;

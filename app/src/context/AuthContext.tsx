@@ -22,11 +22,21 @@ import {
   isFirebaseConfigured,
   STUDENT_EMAIL_DOMAIN,
 } from "../lib/firebase";
-import type { Branch, Profile, RegisterInput } from "../lib/types";
+import {
+  DEFAULT_GLOBAL_SETTINGS,
+  normalizeGlobalSettings,
+} from "../lib/settings";
+import type {
+  Branch,
+  GlobalSettings,
+  Profile,
+  RegisterInput,
+} from "../lib/types";
 
 interface AuthContextValue {
   user: User | null;
   profile: Profile | null;
+  settings: GlobalSettings;
   loading: boolean;
   registering: boolean;
   configured: boolean;
@@ -54,6 +64,7 @@ function profileFromData(uid: string, data: Record<string, unknown>): Profile {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_GLOBAL_SETTINGS);
   const [loading, setLoading] = useState(Boolean(auth));
   const [registering, setRegistering] = useState(false);
 
@@ -96,6 +107,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     );
     return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !db) {
+      setSettings(DEFAULT_GLOBAL_SETTINGS);
+      return;
+    }
+    return onSnapshot(
+      doc(db, "settings", "global"),
+      (snapshot) => {
+        setSettings(
+          normalizeGlobalSettings(
+            snapshot.exists() ? (snapshot.data() as Partial<GlobalSettings>) : null,
+          ),
+        );
+      },
+      () => setSettings(DEFAULT_GLOBAL_SETTINGS),
+    );
   }, [user]);
 
   const login = useCallback(async (username: string, password: string) => {
@@ -158,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       profile,
+      settings,
       loading,
       registering,
       configured: isFirebaseConfigured,
@@ -165,7 +195,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
     }),
-    [user, profile, loading, registering, login, register, logout],
+    [user, profile, settings, loading, registering, login, register, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

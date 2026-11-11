@@ -22,7 +22,7 @@ interface EnrollmentRow {
 }
 
 export function HomePage() {
-  const { profile, user } = useAuth();
+  const { profile, user, settings } = useAuth();
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [enrollments, setEnrollments] = useState<Record<string, EnrollmentRow>>({});
   const [loadingSubjects, setLoadingSubjects] = useState(true);
@@ -110,9 +110,15 @@ export function HomePage() {
             أهلًا، <span>{profile?.displayName}</span>
           </h1>
           <p>
-            كل مرحلة تضيف أسئلة جديدة وتعید أسئلة تحتاج تثبيتًا. أكمل التغطية، واصل حتى الإتقان،
-            ثم استلم شهادتك.
+            كل مرحلة تضيف أسئلة جديدة وتعيد أسئلة تحتاج تثبيتًا. أكمل التغطية، واصل حتى الإتقان،
+            واستعد لامتحان الشهادة الأخير.
           </p>
+          {settings.finalExamReminder ? (
+            <p className="home-hero__reminder">
+              <SparklesIcon />
+              {settings.finalExamReminder}
+            </p>
+          ) : null}
           <div className="home-hero__actions">
             <Link to="/progress" className="button button--primary">
               عرض تقدمي

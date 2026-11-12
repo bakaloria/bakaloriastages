@@ -3608,6 +3608,38 @@ svg {
   margin-bottom: 20px;
 }
 
+.notice-feed__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.notice-feed__title,
+.notice-feed__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.notice-feed__title {
+  color: var(--muted);
+}
+
+.notice-feed__link {
+  flex: none;
+  color: var(--green);
+}
+
+.notice-feed__title svg,
+.notice-feed__link svg {
+  width: 15px;
+  height: 15px;
+}
+
 .notice {
   --notice-tempo: 1;
   position: relative;
@@ -3906,11 +3938,6 @@ svg {
   color: inherit;
 }
 
-.notice--custom-bg .notice__link {
-  color: inherit;
-  opacity: 0.82;
-}
-
 /* زخارف الخلفية تُرسم فوق لون الإعلان مع احترام لون النص المختار. */
 .notice--pattern-dots::before,
 .notice--pattern-grid::before,
@@ -4032,22 +4059,6 @@ svg {
   flex-wrap: wrap;
   gap: 7px;
   margin-bottom: 6px;
-}
-
-.notice__link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  align-self: center;
-  flex: none;
-  color: var(--green);
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.notice__link svg {
-  width: 15px;
-  height: 15px;
 }
 
 .notifications-page .notice {
@@ -5171,8 +5182,53 @@ svg {
     flex-wrap: wrap;
   }
 
-  .notice__link {
-    margin-inline-start: 51px;
+  .notice-feed__head {
+    margin-bottom: 6px;
+  }
+
+  .home-page .notice--anim-banner {
+    gap: 9px;
+    margin-inline: -16px;
+    border-radius: 0;
+    padding: 10px 14px;
+  }
+
+  .notice--anim-banner .notice__icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 9px;
+  }
+
+  .notice--anim-banner .notice__icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .notice--anim-banner .notice__ticker-item {
+    gap: 7px;
+    padding-inline-end: 28px;
+  }
+
+  .notice--anim-banner .notice__ticker-item strong {
+    font-size: 0.86rem;
+  }
+
+  .notice--anim-banner .notice__ticker-body {
+    font-size: 0.8rem;
+  }
+
+  .announcement-preview {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .announcement-preview__head {
+    flex-wrap: wrap;
+  }
+
+  .announcement-preview__head .button {
+    flex: 1 1 auto;
+    justify-content: center;
   }
 
   .admin-quick-grid {

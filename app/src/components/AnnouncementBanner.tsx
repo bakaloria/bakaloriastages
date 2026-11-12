@@ -30,38 +30,48 @@ export function AnnouncementBanner() {
   if (announcements.length === 0 && !settings.maintenanceMessage) return null;
 
   return (
-    <section className="notice-stack" aria-label="إعلانات المنصة">
-      {settings.maintenanceMessage ? (
-        <article className="notice notice--warning">
-          <span className="notice__icon">
-            <BellIcon />
+    <section className="notice-feed" aria-label="إعلانات المنصة">
+      {announcements.length > 0 ? (
+        <div className="notice-feed__head">
+          <span className="notice-feed__title">
+            <MegaphoneIcon />
+            إعلانات المنصة
           </span>
-          <div className="notice__content">
-            <strong>تنبيه من الإدارة</strong>
-            <p>{settings.maintenanceMessage}</p>
-          </div>
-        </article>
-      ) : null}
-      {announcements.map((announcement) => (
-        <article
-          className={announcementClasses(announcement)}
-          key={announcementRenderKey(announcement)}
-          style={announcementStyle(announcement)}
-        >
-          <span className="notice__icon">
-            {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
-          </span>
-          <AnnouncementContent
-            title={announcement.title}
-            body={announcement.body}
-            banner={announcement.animation === "banner"}
-          />
-          <Link to="/notifications" className="notice__link">
+          <Link to="/notifications" className="notice-feed__link">
             كل الإشعارات
             <ChevronLeftIcon />
           </Link>
-        </article>
-      ))}
+        </div>
+      ) : null}
+      <div className="notice-stack">
+        {settings.maintenanceMessage ? (
+          <article className="notice notice--warning">
+            <span className="notice__icon">
+              <BellIcon />
+            </span>
+            <div className="notice__content">
+              <strong>تنبيه من الإدارة</strong>
+              <p>{settings.maintenanceMessage}</p>
+            </div>
+          </article>
+        ) : null}
+        {announcements.map((announcement) => (
+          <article
+            className={announcementClasses(announcement)}
+            key={announcementRenderKey(announcement)}
+            style={announcementStyle(announcement)}
+          >
+            <span className="notice__icon">
+              {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
+            </span>
+            <AnnouncementContent
+              title={announcement.title}
+              body={announcement.body}
+              banner={announcement.animation === "banner"}
+            />
+          </article>
+        ))}
+      </div>
     </section>
   );
 }

@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   setDoc,
 } from "firebase/firestore";
+import { AnnouncementContent } from "../components/AnnouncementContent";
 import {
   AwardIcon,
   BellIcon,
@@ -1503,12 +1504,14 @@ export function AdminPage() {
                   <select
                     className="input"
                     value={draft.animation}
-                    onChange={(event) =>
+                    onChange={(event) => {
+                      const animation = event.target.value as AnnouncementAnimation;
                       setDraft((previous) => ({
                         ...previous,
-                        animation: event.target.value as AnnouncementAnimation,
-                      }))
-                    }
+                        animation,
+                        loop: animation === "banner" ? true : previous.loop,
+                      }));
+                    }}
                   >
                     {ANNOUNCEMENT_ANIMATIONS.map((option) => (
                       <option value={option.value} key={option.value}>
@@ -1516,6 +1519,11 @@ export function AdminPage() {
                       </option>
                     ))}
                   </select>
+                  <small>
+                    {draft.animation === "banner"
+                      ? "البانر يثبت الإطار ويجعل النص يتحرك داخله فقط، ويستمر تلقائيًا."
+                      : "تتحرك بطاقة الإعلان كاملة حسب الحركة المختارة."}
+                  </small>
                 </label>
                 <label className="field">
                   <span>خط الإعلان</span>
@@ -1642,22 +1650,29 @@ export function AdminPage() {
                 <small>الخلفيات الداكنة تحوّل النص تلقائيًا إلى الأبيض ما لم تختر لونًا يدويًا.</small>
               </div>
 
-              <div className="admin-toggle-row">
-                <label className="admin-switch admin-switch--compact">
-                  <input
-                    type="checkbox"
-                    checked={draft.loop}
-                    onChange={(event) =>
-                      setDraft((previous) => ({ ...previous, loop: event.target.checked }))
-                    }
-                  />
-                  <span className="admin-switch__track" />
-                  <span>
-                    <strong>حركة مستمرة</strong>
-                    <small>تُبقي الإعلان متحركًا بدل تشغيل الحركة مرة واحدة.</small>
-                  </span>
-                </label>
-              </div>
+              {draft.animation === "banner" ? (
+                <p className="muted small">
+                  البانر يحرّك النص داخل شريط ثابت ويستمر تلقائيًا. استخدم سرعة الحركة
+                  للتحكم في وتيرته.
+                </p>
+              ) : (
+                <div className="admin-toggle-row">
+                  <label className="admin-switch admin-switch--compact">
+                    <input
+                      type="checkbox"
+                      checked={draft.loop}
+                      onChange={(event) =>
+                        setDraft((previous) => ({ ...previous, loop: event.target.checked }))
+                      }
+                    />
+                    <span className="admin-switch__track" />
+                    <span>
+                      <strong>حركة مستمرة</strong>
+                      <small>تُبقي الإعلان متحركًا بدل تشغيل الحركة مرة واحدة.</small>
+                    </span>
+                  </label>
+                </div>
+              )}
 
               <div className="announcement-preview">
                 <div className="announcement-preview__head">
@@ -1685,10 +1700,11 @@ export function AdminPage() {
                   key={`${previewNonce}-${draft.animation}-${draft.speed}-${draft.font}-${draft.pattern}-${draft.background}-${draft.textColor}-${draft.loop}`}
                 >
                   <span className="notice__icon"><MegaphoneIcon /></span>
-                  <div className="notice__content">
-                    <strong>{draft.title || "عنوان الإعلان"}</strong>
-                    <p>{draft.body || "سيظهر نص رسالتك هنا بالحركة والخط المختارين."}</p>
-                  </div>
+                  <AnnouncementContent
+                    title={draft.title || "عنوان الإعلان"}
+                    body={draft.body || "سيظهر نص رسالتك هنا بالحركة والخط المختارين."}
+                    banner={draft.animation === "banner"}
+                  />
                 </article>
               </div>
 

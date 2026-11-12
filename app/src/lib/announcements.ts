@@ -34,6 +34,11 @@ export const ANNOUNCEMENT_ANIMATIONS: Array<{
   description: string;
 }> = [
   { value: "none", label: "بدون حركة", description: "ثابت وهادئ" },
+  {
+    value: "banner",
+    label: "بانر متحرك",
+    description: "الإطار ثابت والنص يتحرك",
+  },
   { value: "slide-right", label: "دخول من اليمين", description: "انزلاق من جهة البداية" },
   { value: "slide-left", label: "دخول من اليسار", description: "انزلاق من الجهة المقابلة" },
   { value: "slide-up", label: "صعود من الأسفل", description: "ظهور تدريجي من الأسفل" },
@@ -169,18 +174,19 @@ export function announcementFromDoc(
     data.tone === "success" || data.tone === "warning" || data.tone === "danger"
       ? (data.tone as AnnouncementTone)
       : "info";
+  const animation = asAnimation(data.animation);
   return {
     id,
     title: String(data.title ?? ""),
     body: String(data.body ?? ""),
     tone,
-    animation: asAnimation(data.animation),
+    animation,
     font: asFont(data.font),
     speed: asSpeed(data.speed ?? data.animationSpeed),
     background: normalizeAnnouncementColor(data.background ?? data.backgroundColor),
     pattern: asPattern(data.pattern ?? data.backgroundPattern),
     textColor: normalizeAnnouncementColor(data.textColor),
-    loop: data.loop !== false && data.animationLoop !== false,
+    loop: animation === "banner" || (data.loop !== false && data.animationLoop !== false),
     active: data.active !== false,
     pinned: Boolean(data.pinned),
     createdAt: data.createdAt,
@@ -326,17 +332,18 @@ export async function saveAnnouncement(
   admin: Profile,
 ): Promise<void> {
   if (!db) throw new Error("FIREBASE_NOT_CONFIGURED");
+  const animation = asAnimation(input.animation);
   const payload = {
     title: input.title.trim(),
     body: input.body.trim(),
     tone: input.tone,
-    animation: asAnimation(input.animation),
+    animation,
     font: asFont(input.font),
     speed: asSpeed(input.speed),
     background: normalizeAnnouncementColor(input.background),
     pattern: asPattern(input.pattern),
     textColor: normalizeAnnouncementColor(input.textColor),
-    loop: input.loop,
+    loop: animation === "banner" ? true : input.loop,
     active: input.active,
     pinned: input.pinned,
     expiresAt: input.expiresAt ? Timestamp.fromMillis(input.expiresAt) : null,

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { AnnouncementContent } from "../components/AnnouncementContent";
 import { EmptyState } from "../components/EmptyState";
 import { BellIcon, MegaphoneIcon, RefreshIcon } from "../components/Icons";
 import { InlineLoader } from "../components/Loading";
@@ -87,15 +88,19 @@ export function NotificationsPage() {
               <span className="notice__icon">
                 {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
               </span>
-              <div className="notice__content">
-                <div className="notice__meta">
-                  <span className="badge badge--soft">{TONE_LABELS[announcement.tone]}</span>
-                  {announcement.pinned ? <span className="badge badge--gold">مثبّت</span> : null}
-                  <span className="muted small">{formatDateTime(announcement.createdAt)}</span>
-                </div>
-                <h2>{announcement.title}</h2>
-                <p>{announcement.body}</p>
-              </div>
+              <AnnouncementContent
+                title={announcement.title}
+                body={announcement.body}
+                banner={announcement.animation === "banner"}
+                heading="h2"
+                meta={
+                  <>
+                    <span className="badge badge--soft">{TONE_LABELS[announcement.tone]}</span>
+                    {announcement.pinned ? <span className="badge badge--gold">مثبّت</span> : null}
+                    <span className="muted small">{formatDateTime(announcement.createdAt)}</span>
+                  </>
+                }
+              />
             </article>
           ))}
         </div>

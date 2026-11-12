@@ -3632,7 +3632,58 @@ svg {
 .notice--speed-normal { --notice-tempo: 1; }
 .notice--speed-fast { --notice-tempo: 1.5; }
 
-/* 15 حركة جاهزة، منها حركات دخول وحركات مستمرة. */
+/* بانر متحرك: الإطار ثابت والنص فقط يتحرك داخل الشريط. */
+.notice--anim-banner {
+  align-items: center;
+  padding-block: 12px;
+}
+
+.notice--anim-banner .notice__content--banner {
+  overflow: hidden;
+  min-width: 0;
+}
+
+.notice--anim-banner .notice__ticker {
+  display: flex;
+  align-items: baseline;
+  width: max-content;
+  animation: notice-banner-scroll-rtl calc(22s / var(--notice-tempo)) linear infinite;
+  will-change: transform;
+}
+
+[dir="ltr"] .notice--anim-banner .notice__ticker {
+  animation-name: notice-banner-scroll-ltr;
+}
+
+.notice--anim-banner .notice__ticker-item {
+  display: inline-flex;
+  align-items: baseline;
+  flex: none;
+  gap: 9px;
+  padding-inline-end: clamp(28px, 6vw, 72px);
+}
+
+.notice--anim-banner .notice__ticker-item strong {
+  display: inline;
+  margin: 0;
+  font-size: 0.92rem;
+  white-space: nowrap;
+}
+
+.notice--anim-banner .notice__ticker-body {
+  color: inherit;
+  opacity: 0.8;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.notice--anim-banner .notice__ticker-separator {
+  color: currentColor;
+  opacity: 0.42;
+  font-size: 0.78rem;
+}
+
+/* 16 حركة جاهزة، منها حركات دخول وحركات مستمرة وبانر النص. */
 .notice--anim-slide-right { animation: notice-slide-right 0.72s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
 .notice--anim-slide-left { animation: notice-slide-left 0.72s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
 .notice--anim-slide-up { animation: notice-slide-up 0.72s cubic-bezier(0.2, 0.75, 0.2, 1) both; }
@@ -3772,6 +3823,14 @@ svg {
 @keyframes notice-idle-drift {
   0%, 100% { translate: 0 0; }
   50% { translate: 0 -10px; }
+}
+@keyframes notice-banner-scroll-rtl {
+  from { transform: translateX(0); }
+  to { transform: translateX(33.3333%); }
+}
+@keyframes notice-banner-scroll-ltr {
+  from { transform: translateX(0); }
+  to { transform: translateX(-33.3333%); }
 }
 
 .notice--font-default { font-family: var(--font); }

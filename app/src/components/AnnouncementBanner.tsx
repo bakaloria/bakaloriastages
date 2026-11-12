@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { AnnouncementContent } from "./AnnouncementContent";
 import { BellIcon, ChevronLeftIcon, MegaphoneIcon } from "./Icons";
 import { useAuth } from "../context/AuthContext";
 import {
@@ -50,10 +51,11 @@ export function AnnouncementBanner() {
           <span className="notice__icon">
             {announcement.pinned ? <BellIcon /> : <MegaphoneIcon />}
           </span>
-          <div className="notice__content">
-            <strong>{announcement.title}</strong>
-            <p>{announcement.body}</p>
-          </div>
+          <AnnouncementContent
+            title={announcement.title}
+            body={announcement.body}
+            banner={announcement.animation === "banner"}
+          />
           <Link to="/notifications" className="notice__link">
             كل الإشعارات
             <ChevronLeftIcon />

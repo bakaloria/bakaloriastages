@@ -386,13 +386,15 @@ await admin.firestore().doc("users/<UID>").set(
 ```
 
 - `tone`: `info` أو `success` أو `warning` أو `danger`.
-- `animation`: إحدى 15 حركة، منها `slide-right` و`slide-left` و`orbit` و`pulse`
-  و`flip` و`bounce` و`zoom`، أو `none` لتعطيل الحركة.
+- `animation`: إحدى 16 حركة، منها `banner` لبانر ثابت الإطار يتحرك النص داخله
+  فقط، و`slide-right` و`slide-left` و`orbit` و`pulse` و`flip` و`bounce` و`zoom`،
+  أو `none` لتعطيل الحركة.
 - `font`: `default` أو خط عربي من الخطوط المتاحة، ومنها خطوط زخرفية/إسلامية
   مثل `aref` و`amiri` و`scheherazade` و`lateef` و`reem` و`naskh` و`rakkas`
   و`messiri` و`changa` و`harmattan` و`kufi` و`nastaliq`.
 - `speed`: `slow` أو `normal` أو `fast`.
 - `loop`: عند `true` تستمر حركة الدخول كطفو هادئ بدل أن تتوقف بعد أول تشغيل.
+  مع `animation: banner` تُثبَّت القيمة `true` تلقائيًا لأن نص البانر يتحرك باستمرار.
 - `background`: لون HEX مخصص لخلفية الإعلان، أو فارغ لاستخدام لون النوع.
 - `pattern`: `none` أو `arabesque` أو `geometric` أو `dots` أو `grid` أو `stars`
   أو `waves`.

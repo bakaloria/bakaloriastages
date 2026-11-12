@@ -222,6 +222,7 @@ export type AnnouncementTone = "info" | "success" | "warning" | "danger";
 
 export type AnnouncementAnimation =
   | "none"
+  | "banner"
   | "slide-right"
   | "slide-left"
   | "slide-up"

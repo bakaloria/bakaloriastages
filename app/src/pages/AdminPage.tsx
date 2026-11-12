@@ -54,15 +54,19 @@ import { errorMessage } from "../lib/errors";
 import { auth, db } from "../lib/firebase";
 import { formatDateTime, formatNumber, toMillis } from "../lib/format";
 import {
-  applyBackgroundColor,
+  applyStudentPalette,
   BACKGROUND_PRESETS,
+  contrastRatio,
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_SUBJECT_SETTINGS,
   fetchGlobalSettings,
   fetchSubjectSettings,
   normalizeSubjectSettings,
+  paletteMatches,
   saveGlobalSettings,
   saveSubjectSettings,
+  STUDENT_PALETTES,
+  type StudentPalette,
 } from "../lib/settings";
 import type {
   AdminAuditEntry,
@@ -322,11 +326,11 @@ export function AdminPage() {
     try {
       const saved = await saveGlobalSettings(globalSettings, profile.uid);
       setGlobalSettings(saved);
-      applyBackgroundColor(saved.backgroundColor);
+      applyStudentPalette(saved);
       await logAdminAction(
         profile,
         "settings.global",
-        `${saved.stagesLocked ? "إغلاق المراحل" : "فتح المراحل"} • خلفية ${saved.backgroundColor} • ${
+        `${saved.stagesLocked ? "إغلاق المراحل" : "فتح المراحل"} • ألوان الطالب ${saved.backgroundColor}/${saved.surfaceColor}/${saved.textColor}/${saved.accentColor} • انتظار ${saved.waitBackgroundColor}/${saved.waitTextColor} • ${
           saved.certificateClaimsEnabled ? "صيغة الشهادة مفعّلة" : "سجل إتمام تدريبي"
         }`,
       );
@@ -361,6 +365,38 @@ export function AdminPage() {
 
   function patchSubject<K extends keyof SubjectSettings>(key: K, value: SubjectSettings[K]) {
     setSubjectSettings((previous) => normalizeSubjectSettings({ ...previous, [key]: value }));
+  }
+
+  function applyPalette(palette: StudentPalette) {
+    setGlobalSettings((previous) => ({
+      ...previous,
+      backgroundColor: palette.backgroundColor,
+      surfaceColor: palette.surfaceColor,
+      textColor: palette.textColor,
+      accentColor: palette.accentColor,
+      waitBackgroundColor: palette.waitBackgroundColor,
+      waitTextColor: palette.waitTextColor,
+    }));
+  }
+
+  function patchGlobalColor(
+    key:
+      | "backgroundColor"
+      | "surfaceColor"
+      | "textColor"
+      | "accentColor"
+      | "waitBackgroundColor"
+      | "waitTextColor",
+    value: string,
+  ) {
+    setGlobalSettings((previous) => ({ ...previous, [key]: value }));
+  }
+
+  function contrastBadge(ratio: number) {
+    if (ratio >= 7) return { label: "تباين ممتاز", className: "is-good" };
+    if (ratio >= 4.5) return { label: "تباين جيد", className: "is-good" };
+    if (ratio >= 3) return { label: "تباين محدود", className: "is-warn" };
+    return { label: "تباين ضعيف", className: "is-bad" };
   }
 
   function editAnnouncement(announcement: Announcement) {
@@ -628,7 +664,12 @@ export function AdminPage() {
   const visibleTabs = mustChangePassword
     ? TABS.filter((item) => item.id === "account")
     : TABS;
-
+  const pageContrast = contrastRatio(globalSettings.textColor, globalSettings.backgroundColor);
+  const surfaceContrast = contrastRatio(globalSettings.textColor, globalSettings.surfaceColor);
+  const waitContrast = contrastRatio(
+    globalSettings.waitTextColor,
+    globalSettings.waitBackgroundColor,
+  );
   return (
     <div className="page admin-page">
       <section className="admin-hero">
@@ -861,8 +902,84 @@ export function AdminPage() {
                 <small>يظهر في الرئيسية وعند اكتمال مراجعة المادة.</small>
               </label>
 
+              <div className="admin-settings-divider">
+                <span className="eyebrow"><SparklesIcon /> ألوان صفحة الطالب</span>
+                <p className="muted small">
+                  اختر لوحة جاهزة أو عدّل ألوان الصفحة والبطاقات والنص والتمييز. تُطبَّق
+                  الألوان على كل صفحات الطالب بعد الحفظ. يمكنك ضبط شاشة الانتظار في
+                  القسم التالي.
+                </p>
+              </div>
+
+              <div className="palette-presets">
+                {STUDENT_PALETTES.map((palette) => {
+                  const selected = paletteMatches(globalSettings, palette);
+                  return (
+                    <button
+                      key={palette.id}
+                      type="button"
+                      className={`palette-preset${selected ? " is-selected" : ""}`}
+                      onClick={() => applyPalette(palette)}
+                      aria-pressed={selected}
+                    >
+                      <span className="palette-preset__dots" aria-hidden="true">
+                        <i style={{ backgroundColor: palette.backgroundColor }} />
+                        <i style={{ backgroundColor: palette.surfaceColor }} />
+                        <i style={{ backgroundColor: palette.accentColor }} />
+                      </span>
+                      <span className="palette-preset__body">
+                        <strong>{palette.label}</strong>
+                        <small>{palette.description}</small>
+                      </span>
+                      {selected ? <CheckIcon /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="student-color-grid">
+                {([
+                  {
+                    key: "backgroundColor",
+                    label: "خلفية الصفحة",
+                    hint: "اللون العام خلف كل البطاقات.",
+                  },
+                  {
+                    key: "surfaceColor",
+                    label: "خلفية البطاقات",
+                    hint: "البطاقات والجداول والنوافذ.",
+                  },
+                  {
+                    key: "textColor",
+                    label: "لون النص",
+                    hint: "العناوين والنصوص الأساسية.",
+                  },
+                  {
+                    key: "accentColor",
+                    label: "لون التمييز",
+                    hint: "الأزرار والروابط والعناصر المهمة.",
+                  },
+                ] as const).map((item) => (
+                  <label className="field" key={item.key}>
+                    <span>{item.label}</span>
+                    <div className="admin-inline-color">
+                      <input
+                        className="admin-color-input"
+                        type="color"
+                        value={globalSettings[item.key]}
+                        onChange={(event) => patchGlobalColor(item.key, event.target.value)}
+                      />
+                      <code className="admin-color-code" dir="ltr">
+                        {globalSettings[item.key].toUpperCase()}
+                      </code>
+                    </div>
+                    <small>{item.hint}</small>
+                  </label>
+                ))}
+              </div>
+
               <div className="field">
-                <span>لون خلفية المنصة</span>
+                <span>لوحة ألوان سريعة للخلفية</span>
                 <div className="theme-swatches">
                   {BACKGROUND_PRESETS.map((preset) => (
                     <button
@@ -874,34 +991,124 @@ export function AdminPage() {
                       style={{ backgroundColor: preset.value }}
                       title={preset.label}
                       aria-label={preset.label}
-                      onClick={() =>
-                        setGlobalSettings((previous) => ({
-                          ...previous,
-                          backgroundColor: preset.value,
-                        }))
-                      }
+                      onClick={() => patchGlobalColor("backgroundColor", preset.value)}
                     />
                   ))}
                   <label className="theme-swatch theme-swatch--custom" title="لون مخصص">
                     <input
                       type="color"
                       value={globalSettings.backgroundColor}
-                      onChange={(event) =>
-                        setGlobalSettings((previous) => ({
-                          ...previous,
-                          backgroundColor: event.target.value,
-                        }))
-                      }
+                      onChange={(event) => patchGlobalColor("backgroundColor", event.target.value)}
                     />
                     <span>+</span>
                   </label>
                 </div>
-                <div className="theme-preview" style={{ backgroundColor: globalSettings.backgroundColor }}>
-                  <strong>معاينة الخلفية</strong>
-                  <span>يُطبّق اللون فور الحفظ على كل صفحات الطلاب.</span>
-                </div>
-                <small>اختر لونًا فاتحًا ليبقى النص مقروءًا. يمكنك أيضًا اختيار لون مخصص.</small>
               </div>
+
+              <div className="admin-settings-divider">
+                <span className="eyebrow"><LockIcon /> شاشة الانتظار بين المراحل</span>
+                <p className="muted small">
+                  هذه الشاشة تظهر عند الانتظار بين مرحلتين أو عند إغلاق المراحل من الإدارة.
+                  عيّن خلفيتها ونصها مباشرة؛ حلّل التباين قبل الحفظ.
+                </p>
+              </div>
+
+              <div className="student-color-grid">
+                {([
+                  {
+                    key: "waitBackgroundColor",
+                    label: "خلفية شاشة الانتظار",
+                    hint: "اللون الغامق الذي تظهر عليه رسالة الانتظار.",
+                  },
+                  {
+                    key: "waitTextColor",
+                    label: "نص شاشة الانتظار",
+                    hint: "لون العنوان والفقرة والعدّاد.",
+                  },
+                ] as const).map((item) => (
+                  <label className="field" key={item.key}>
+                    <span>{item.label}</span>
+                    <div className="admin-inline-color">
+                      <input
+                        className="admin-color-input"
+                        type="color"
+                        value={globalSettings[item.key]}
+                        onChange={(event) => patchGlobalColor(item.key, event.target.value)}
+                      />
+                      <code className="admin-color-code" dir="ltr">
+                        {globalSettings[item.key].toUpperCase()}
+                      </code>
+                    </div>
+                    <small>{item.hint}</small>
+                  </label>
+                ))}
+              </div>
+
+              <div
+                className="student-palette-preview"
+                style={{
+                  backgroundColor: globalSettings.backgroundColor,
+                  color: globalSettings.textColor,
+                }}
+              >
+                <div className="student-palette-preview__head">
+                  <strong>معاينة مباشرة لصفحة الطالب</strong>
+                  <span className={`contrast-badge ${contrastBadge(pageContrast).className}`}>
+                    {contrastBadge(pageContrast).label}
+                  </span>
+                </div>
+                <p>هكذا سيظهر النص العادي على خلفية الصفحة.</p>
+                <div
+                  className="student-palette-preview__card"
+                  style={{
+                    backgroundColor: globalSettings.waitBackgroundColor,
+                    color: globalSettings.waitTextColor,
+                    borderColor: "rgba(128, 128, 128, 0.35)",
+                  }}
+                >
+                  <span
+                    className="student-palette-preview__eyebrow"
+                    style={{ color: globalSettings.waitTextColor }}
+                  >
+                    فاصل بين المراحل
+                  </span>
+                  <strong>استراحة قصيرة بين المراحل</strong>
+                  <p>المرحلة التالية تبدأ بعد:</p>
+                  <span
+                    className="student-palette-preview__countdown"
+                    style={{
+                      backgroundColor: "rgba(128, 128, 128, 0.22)",
+                      color: globalSettings.waitTextColor,
+                    }}
+                  >
+                    12:00
+                  </span>
+                </div>
+              </div>
+
+              <div className="contrast-row">
+                <span className={`contrast-badge ${contrastBadge(pageContrast).className}`}>
+                  النص على خلفية الصفحة: {pageContrast.toFixed(1)}:1
+                </span>
+                <span className={`contrast-badge ${contrastBadge(surfaceContrast).className}`}>
+                  النص على البطاقات: {surfaceContrast.toFixed(1)}:1
+                </span>
+                <span className={`contrast-badge ${contrastBadge(waitContrast).className}`}>
+                  نص الانتظار: {waitContrast.toFixed(1)}:1
+                </span>
+                <button
+                  type="button"
+                  className="button button--ghost button--sm"
+                  onClick={() => applyPalette(STUDENT_PALETTES[0])}
+                >
+                  <RefreshIcon />
+                  استعادة الافتراضي
+                </button>
+              </div>
+              <small>
+                إذا ظهر «تباين ضعيف» فاختر نصًا أفتح مع الخلفيات الداكنة، أو نصًا أغمق مع
+                الخلفيات الفاتحة. شاشة الانتظار تستخدم نصوصًا فاتحة دائمًا فوق خلفيتها الداكنة.
+              </small>
             </section>
 
             <section className="admin-card">

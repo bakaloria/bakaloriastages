@@ -208,6 +208,11 @@ export interface GlobalSettings {
   lockMessage: string;
   maintenanceMessage: string;
   backgroundColor: string;
+  surfaceColor: string;
+  textColor: string;
+  accentColor: string;
+  waitBackgroundColor: string;
+  waitTextColor: string;
   certificateClaimsEnabled: boolean;
   certificateNotice: string;
   finalExamReminder: string;

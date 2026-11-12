@@ -23,6 +23,7 @@ import {
   STUDENT_EMAIL_DOMAIN,
 } from "../lib/firebase";
 import {
+  applyStudentPalette,
   DEFAULT_GLOBAL_SETTINGS,
   normalizeGlobalSettings,
 } from "../lib/settings";
@@ -126,6 +127,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       () => setSettings(DEFAULT_GLOBAL_SETTINGS),
     );
   }, [user]);
+
+  useEffect(() => {
+    // Apply the theme at the provider level so the login page and the logout
+    // state also reset to the saved palette instead of keeping stale colors.
+    applyStudentPalette(settings);
+  }, [settings]);
 
   const login = useCallback(async (username: string, password: string) => {
     if (!auth) throw new Error("FIREBASE_NOT_CONFIGURED");

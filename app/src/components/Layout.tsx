@@ -6,7 +6,6 @@ import {
   fetchActiveAnnouncements,
   unseenAnnouncementCount,
 } from "../lib/announcements";
-import { applyBackgroundColor } from "../lib/settings";
 import {
   BellIcon,
   ChartIcon,
@@ -44,7 +43,7 @@ export function BrandMark() {
 }
 
 export function Layout() {
-  const { profile, logout, settings } = useAuth();
+  const { profile, logout } = useAuth();
   const location = useLocation();
   const [unread, setUnread] = useState(0);
 
@@ -59,10 +58,6 @@ export function Layout() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "instant" as ScrollBehavior });
   }, [location.pathname]);
-
-  useEffect(() => {
-    applyBackgroundColor(settings.backgroundColor);
-  }, [settings.backgroundColor]);
 
   useEffect(() => {
     if (!profile) return;

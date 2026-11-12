@@ -191,6 +191,7 @@ export function announcementFromDoc(
     pinned: Boolean(data.pinned),
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
+    publishAt: data.publishAt,
     expiresAt: data.expiresAt,
     createdBy: String(data.createdBy ?? ""),
   };
@@ -260,8 +261,13 @@ function expiryMillis(value: unknown): number | null {
 }
 
 export function isAnnouncementLive(announcement: Announcement, now = Date.now()): boolean {
+  const publish = expiryMillis(announcement.publishAt);
   const expires = expiryMillis(announcement.expiresAt);
-  return announcement.active && (expires === null || expires > now);
+  return (
+    announcement.active &&
+    (publish === null || publish <= now) &&
+    (expires === null || expires > now)
+  );
 }
 
 function sortAnnouncements(rows: Announcement[]): Announcement[] {
@@ -291,17 +297,48 @@ export function subscribeActiveAnnouncements(
     onRows([]);
     return () => undefined;
   }
-  return onSnapshot(
+
+  let latest: Announcement[] = [];
+  let timer: number | undefined;
+
+  // A scheduled announcement may become visible (or expire) while the page is
+  // already open. Re-evaluate at the nearest publish/expiry boundary so the
+  // live feed changes without requiring a refresh.
+  const emit = () => {
+    if (timer !== undefined) window.clearTimeout(timer);
+    const now = Date.now();
+    onRows(sortAnnouncements(latest));
+    const nextBoundary = latest.reduce((nearest, announcement) => {
+      if (!announcement.active) return nearest;
+      for (const value of [announcement.publishAt, announcement.expiresAt]) {
+        const millis = expiryMillis(value);
+        if (millis !== null && millis > now && millis < nearest) nearest = millis;
+      }
+      return nearest;
+    }, Number.POSITIVE_INFINITY);
+    if (Number.isFinite(nextBoundary)) {
+      timer = window.setTimeout(
+        emit,
+        Math.max(1000, Math.min(nextBoundary - now + 300, 2147483647)),
+      );
+    }
+  };
+
+  const unsubscribe = onSnapshot(
     query(collection(db, "announcements"), where("active", "==", true), limit(50)),
     (snap) => {
-      onRows(
-        sortAnnouncements(snap.docs.map((item) => announcementFromDoc(item.id, item.data()))),
-      );
+      latest = snap.docs.map((item) => announcementFromDoc(item.id, item.data()));
+      emit();
     },
     (error) => {
       onError?.(error);
     },
   );
+
+  return () => {
+    unsubscribe();
+    if (timer !== undefined) window.clearTimeout(timer);
+  };
 }
 
 export async function fetchAllAnnouncements(): Promise<Announcement[]> {
@@ -327,6 +364,7 @@ export async function saveAnnouncement(
     loop: boolean;
     active: boolean;
     pinned: boolean;
+    publishAt: number | null;
     expiresAt: number | null;
   },
   admin: Profile,
@@ -346,6 +384,7 @@ export async function saveAnnouncement(
     loop: animation === "banner" ? true : input.loop,
     active: input.active,
     pinned: input.pinned,
+    publishAt: input.publishAt ? Timestamp.fromMillis(input.publishAt) : null,
     expiresAt: input.expiresAt ? Timestamp.fromMillis(input.expiresAt) : null,
     updatedAt: serverTimestamp(),
     updatedBy: admin.uid,

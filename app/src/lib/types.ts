@@ -288,6 +288,7 @@ export interface Announcement {
   pinned: boolean;
   createdAt?: unknown;
   updatedAt?: unknown;
+  publishAt?: unknown;
   expiresAt?: unknown;
   createdBy?: string;
 }

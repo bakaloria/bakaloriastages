@@ -165,6 +165,12 @@ export function QuestionBankPanel({
     kind: "json" | "quick";
     parsed: ParsedBank;
   } | null>(null);
+  const [questionSearch, setQuestionSearch] = useState("");
+  const [questionTypeFilter, setQuestionTypeFilter] = useState<QuestionType | "all">("all");
+  const [questionStatusFilter, setQuestionStatusFilter] = useState<
+    "all" | "active" | "inactive"
+  >("all");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
 
   const selectedSubject = useMemo(
     () => subjects.find((subject) => subject.id === subjectId) ?? null,
@@ -180,11 +186,31 @@ export function QuestionBankPanel({
     .map((item) => item.trim())
     .filter(Boolean);
   const correctIndex = Math.min(editor.correctIndex, Math.max(0, optionRows.length - 1));
+  const filteredRows = useMemo(() => {
+    const needle = questionSearch.trim().toLowerCase();
+    return rows.filter((row) => {
+      if (needle && !row.text.toLowerCase().includes(needle)) return false;
+      if (questionTypeFilter !== "all" && row.type !== questionTypeFilter) return false;
+      if (questionStatusFilter === "active" && !row.active) return false;
+      if (questionStatusFilter === "inactive" && row.active) return false;
+      return true;
+    });
+  }, [rows, questionSearch, questionTypeFilter, questionStatusFilter]);
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedIds.has(row.id)),
+    [rows, selectedIds],
+  );
+  const allVisibleSelected =
+    filteredRows.length > 0 && filteredRows.every((row) => selectedIds.has(row.id));
 
   const showNotice = useCallback((message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(""), 5000);
   }, []);
+
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [subjectId, unitId, lessonId, questionSearch, questionTypeFilter, questionStatusFilter]);
 
   const loadTaxonomy = useCallback(async (nextSubjectId: string) => {
     if (!db || !nextSubjectId) {
@@ -545,12 +571,99 @@ export function QuestionBankPanel({
     try {
       await removeQuestion(row, profile);
       await logAdminAction(profile, "questions.delete", row.text.slice(0, 80));
+      setSelectedIds((previous) => {
+        const next = new Set(previous);
+        next.delete(row.id);
+        return next;
+      });
       showNotice("تم حذف السؤال وتحديث الإجماليات.");
       refreshAll();
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
       setSaving(false);
+    }
+  }
+
+  function toggleSelected(id: string) {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((previous) => {
+      const next = new Set(previous);
+      if (allVisibleSelected) {
+        filteredRows.forEach((row) => next.delete(row.id));
+      } else {
+        filteredRows.forEach((row) => next.add(row.id));
+      }
+      return next;
+    });
+  }
+
+  async function bulkSetActive(active: boolean) {
+    if (selectedRows.length === 0) return;
+    setSaving(true);
+    setError("");
+    setProgress({ done: 0, total: selectedRows.length });
+    try {
+      for (let index = 0; index < selectedRows.length; index += 1) {
+        await setQuestionActive(selectedRows[index], active, profile);
+        setProgress({ done: index + 1, total: selectedRows.length });
+      }
+      await logAdminAction(
+        profile,
+        active ? "questions.bulk.activate" : "questions.bulk.disable",
+        `${selectedRows.length} سؤالًا`,
+      );
+      showNotice(
+        `${active ? "تم تفعيل" : "تم تعطيل"} ${formatNumber(selectedRows.length)} سؤالًا.`,
+      );
+      setSelectedIds(new Set());
+      refreshAll();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+      setProgress(null);
+    }
+  }
+
+  async function bulkDelete() {
+    if (selectedRows.length === 0) return;
+    if (
+      !window.confirm(
+        `حذف ${formatNumber(selectedRows.length)} سؤالًا نهائيًا؟ سيُرفض الحذف إذا كان أحدها داخل مرحلة مفتوحة.`,
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    setProgress({ done: 0, total: selectedRows.length });
+    try {
+      for (let index = 0; index < selectedRows.length; index += 1) {
+        await removeQuestion(selectedRows[index], profile);
+        setProgress({ done: index + 1, total: selectedRows.length });
+      }
+      await logAdminAction(
+        profile,
+        "questions.bulk.delete",
+        `${selectedRows.length} سؤالًا`,
+      );
+      showNotice(`تم حذف ${formatNumber(selectedRows.length)} سؤالًا.`);
+      setSelectedIds(new Set());
+      refreshAll();
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+      setProgress(null);
     }
   }
 
@@ -723,6 +836,46 @@ export function QuestionBankPanel({
               ))}
             </select>
           </label>
+          <label className="field">
+            <span>بحث في المعروض</span>
+            <input
+              className="input"
+              value={questionSearch}
+              onChange={(event) => setQuestionSearch(event.target.value)}
+              placeholder="ابحث بنص السؤال..."
+            />
+          </label>
+          <label className="field">
+            <span>نوع السؤال</span>
+            <select
+              className="input"
+              value={questionTypeFilter}
+              onChange={(event) =>
+                setQuestionTypeFilter(event.target.value as QuestionType | "all")
+              }
+            >
+              <option value="all">كل الأنواع</option>
+              {QUESTION_TYPE_OPTIONS.map((option) => (
+                <option value={option.value} key={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>حالة السؤال</span>
+            <select
+              className="input"
+              value={questionStatusFilter}
+              onChange={(event) =>
+                setQuestionStatusFilter(event.target.value as "all" | "active" | "inactive")
+              }
+            >
+              <option value="all">الكل</option>
+              <option value="active">نشط</option>
+              <option value="inactive">معطّل</option>
+            </select>
+          </label>
         </div>
 
         <div className="admin-bank-summary">
@@ -786,7 +939,7 @@ export function QuestionBankPanel({
         {notice ? <div className="alert alert--success">{notice}</div> : null}
         {progress ? (
           <div className="alert alert--info">
-            جارٍ الحفظ... {formatNumber(progress.done)} / {formatNumber(progress.total)} سؤال
+            جارٍ التنفيذ... {formatNumber(progress.done)} / {formatNumber(progress.total)} سؤال
           </div>
         ) : null}
       </section>
@@ -1110,21 +1263,79 @@ export function QuestionBankPanel({
           <div>
             <span className="eyebrow"><BookIcon /> الأسئلة الحالية</span>
             <h2>
-              {formatNumber(scopeCount)} سؤال — عرض {formatNumber(rows.length)}
+              {formatNumber(scopeCount)} سؤال — عرض {formatNumber(filteredRows.length)} من{" "}
+              {formatNumber(rows.length)} محمّل
             </h2>
           </div>
           <span className="badge badge--soft">مرتبة حسب orderIndex</span>
+        </div>
+
+        <div className="admin-question-bulkbar">
+          <label className="admin-bulk-check">
+            <input
+              type="checkbox"
+              checked={allVisibleSelected}
+              onChange={toggleSelectAll}
+              disabled={filteredRows.length === 0 || saving}
+            />
+            <span>تحديد المعروض ({formatNumber(filteredRows.length)})</span>
+          </label>
+          {selectedRows.length > 0 ? (
+            <div className="button-row">
+              <span className="badge badge--gold">
+                {formatNumber(selectedRows.length)} محدد
+              </span>
+              <button
+                className="button button--ghost button--sm"
+                type="button"
+                onClick={() => void bulkSetActive(true)}
+                disabled={saving}
+              >
+                تفعيل المحدد
+              </button>
+              <button
+                className="button button--ghost button--sm"
+                type="button"
+                onClick={() => void bulkSetActive(false)}
+                disabled={saving}
+              >
+                تعطيل المحدد
+              </button>
+              <button
+                className="button button--danger-ghost button--sm"
+                type="button"
+                onClick={() => void bulkDelete()}
+                disabled={saving}
+              >
+                <TrashIcon />
+                حذف المحدد
+              </button>
+            </div>
+          ) : (
+            <span className="muted small">حدد أسئلة لتنفيذ إجراء جماعي.</span>
+          )}
         </div>
 
         {loadingScope ? (
           <p className="muted">نقرأ الأسئلة...</p>
         ) : rows.length === 0 ? (
           <p className="muted">لا توجد أسئلة في النطاق المحدد بعد.</p>
+        ) : filteredRows.length === 0 ? (
+          <p className="muted">لا توجد أسئلة مطابقة للفلاتر الحالية.</p>
         ) : (
           <div className="admin-question-list">
-            {rows.map((row) => (
+            {filteredRows.map((row) => (
               <article className="admin-question-row" key={row.id}>
                 <div className="admin-question-row__top">
+                  <label className="admin-question-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(row.id)}
+                      onChange={() => toggleSelected(row.id)}
+                      disabled={saving}
+                      aria-label={`تحديد السؤال: ${row.text.slice(0, 40)}`}
+                    />
+                  </label>
                   <span className="badge badge--soft">#{formatNumber(row.orderIndex ?? 0)}</span>
                   <span className="badge badge--gold">{questionTypeLabel(row.type)}</span>
                   <span className={`badge ${row.active ? "badge--green" : "badge--red"}`}>

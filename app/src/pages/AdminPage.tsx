@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
 import {
   EmailAuthProvider,
@@ -17,6 +17,8 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { AnnouncementContent } from "../components/AnnouncementContent";
 import {
@@ -47,6 +49,7 @@ import {
   announcementClasses,
   announcementStyle,
   fetchAllAnnouncements,
+  isAnnouncementLive,
   logAdminAction,
   removeAnnouncement,
   saveAnnouncement,
@@ -62,6 +65,7 @@ import {
   DEFAULT_SUBJECT_SETTINGS,
   fetchGlobalSettings,
   fetchSubjectSettings,
+  normalizeGlobalSettings,
   normalizeSubjectSettings,
   paletteMatches,
   saveGlobalSettings,
@@ -108,7 +112,24 @@ interface AnnouncementDraft {
   loop: boolean;
   active: boolean;
   pinned: boolean;
+  publishAt: string;
   expiresAt: string;
+}
+
+type StudentBranchFilter = "all" | Branch;
+type StudentRoleFilter = "all" | "student" | "admin";
+type StudentSort = "newest" | "name" | "role";
+type AnnouncementStatusFilter = "all" | "live" | "scheduled" | "draft" | "expired";
+type PreviewDevice = "desktop" | "mobile";
+
+interface StudentEnrollmentRow {
+  subjectId: string;
+  subjectName: string;
+  coverageCount: number;
+  masteryCount: number;
+  totalQuestions: number;
+  stagesCompleted: number;
+  completedAt?: unknown;
 }
 
 const EMPTY_ANNOUNCEMENT: AnnouncementDraft = {
@@ -124,6 +145,7 @@ const EMPTY_ANNOUNCEMENT: AnnouncementDraft = {
   loop: true,
   active: true,
   pinned: false,
+  publishAt: "",
   expiresAt: "",
 };
 
@@ -143,12 +165,124 @@ const TONE_OPTIONS: Array<{ value: AnnouncementTone; label: string }> = [
   { value: "danger", label: "هام" },
 ];
 
+const SUBJECT_PRESETS: Array<{
+  id: string;
+  label: string;
+  description: string;
+  settings: Partial<SubjectSettings>;
+}> = [
+  {
+    id: "balanced",
+    label: "خطة متوازنة",
+    description: "3 جديد + 2 مراجعة، 10 مراحل، فاصل ساعتين.",
+    settings: {
+      newPerStage: 3,
+      reviewPerStage: 2,
+      failedNewPerStage: 2,
+      failedReviewPerStage: 3,
+      passThreshold: 60,
+      sessionStages: 10,
+      intervalMinutes: 120,
+      stageIntervalMinutes: 0,
+      wrongIntervalMinutes: 10,
+      masteryThreshold: 1,
+    },
+  },
+  {
+    id: "recovery",
+    label: "تعافٍ مكثف",
+    description: "مراجعة أكثر وفاصل أقصر للطلاب المتعثرين.",
+    settings: {
+      newPerStage: 2,
+      reviewPerStage: 4,
+      failedNewPerStage: 1,
+      failedReviewPerStage: 4,
+      passThreshold: 50,
+      sessionStages: 8,
+      intervalMinutes: 90,
+      stageIntervalMinutes: 20,
+      wrongIntervalMinutes: 5,
+      masteryThreshold: 1,
+    },
+  },
+  {
+    id: "fast",
+    label: "تقدم سريع",
+    description: "جديد أكثر ومراحل أطول لمن يجتاز بثبات.",
+    settings: {
+      newPerStage: 4,
+      reviewPerStage: 1,
+      failedNewPerStage: 2,
+      failedReviewPerStage: 3,
+      passThreshold: 70,
+      sessionStages: 12,
+      intervalMinutes: 180,
+      stageIntervalMinutes: 0,
+      wrongIntervalMinutes: 15,
+      masteryThreshold: 0.9,
+    },
+  },
+];
+
 const USERNAME_RE = /^[a-z0-9_]{3,20}$/;
 
 function dateInputValue(value: unknown): string {
   const millis = toMillis(value);
   if (!millis) return "";
   return new Date(millis).toISOString().slice(0, 10);
+}
+
+function dateTimeInputValue(value: unknown): string {
+  const millis = toMillis(value);
+  if (!millis) return "";
+  const local = new Date(millis - new Date(millis).getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
+function announcementStatus(announcement: Announcement): Exclude<AnnouncementStatusFilter, "all"> {
+  const now = Date.now();
+  const publish = toMillis(announcement.publishAt);
+  const expires = toMillis(announcement.expiresAt);
+  if (!announcement.active) return "draft";
+  if (publish !== null && publish > now) return "scheduled";
+  if (expires !== null && expires <= now) return "expired";
+  return isAnnouncementLive(announcement, now) ? "live" : "draft";
+}
+
+function announcementStatusLabel(status: Exclude<AnnouncementStatusFilter, "all">): string {
+  if (status === "live") return "منشور";
+  if (status === "scheduled") return "مجدول";
+  if (status === "expired") return "منتهي";
+  return "مسودة";
+}
+
+function announcementStatusBadge(status: Exclude<AnnouncementStatusFilter, "all">): string {
+  if (status === "live") return "badge badge--green";
+  if (status === "scheduled") return "badge badge--gold";
+  if (status === "expired") return "badge badge--red";
+  return "badge badge--soft";
+}
+
+function downloadText(filename: string, text: string, type: string): void {
+  const blob = new Blob([text], { type });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function downloadJson(filename: string, data: unknown): void {
+  downloadText(filename, JSON.stringify(data, null, 2), "application/json;charset=utf-8");
+}
+
+function csvCell(value: unknown): string {
+  let text = String(value ?? "").replace(/\r?\n/g, " ").replace(/"/g, '""');
+  if (/^[=+\-@]/.test(text)) text = `'${text}`;
+  return `"${text}"`;
 }
 
 function branchName(branch: Branch): string {
@@ -185,8 +319,21 @@ export function AdminPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [studentSearch, setStudentSearch] = useState("");
+  const [studentBranchFilter, setStudentBranchFilter] =
+    useState<StudentBranchFilter>("all");
+  const [studentRoleFilter, setStudentRoleFilter] = useState<StudentRoleFilter>("all");
+  const [studentSort, setStudentSort] = useState<StudentSort>("newest");
+  const [studentDetail, setStudentDetail] = useState<AdminUserRow | null>(null);
+  const [studentDetailRows, setStudentDetailRows] = useState<StudentEnrollmentRow[]>([]);
+  const [studentDetailLoading, setStudentDetailLoading] = useState(false);
+  const [announcementFilter, setAnnouncementFilter] =
+    useState<AnnouncementStatusFilter>("all");
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
+  const [cloneSourceId, setCloneSourceId] = useState("");
   const [draft, setDraft] = useState<AnnouncementDraft>(EMPTY_ANNOUNCEMENT);
   const [previewNonce, setPreviewNonce] = useState(0);
+  const announcementEditorRef = useRef<HTMLElement | null>(null);
+  const backupInputRef = useRef<HTMLInputElement | null>(null);
   const [currentPassword, setCurrentPassword] = useState("");
   const [newUsername, setNewUsername] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -199,13 +346,38 @@ export function AdminPage() {
 
   const filteredStudents = useMemo(() => {
     const needle = studentSearch.trim().toLowerCase();
-    if (!needle) return students;
-    return students.filter(
-      (student) =>
-        student.username.toLowerCase().includes(needle) ||
-        student.displayName.toLowerCase().includes(needle),
+    const rows = students.filter((student) => {
+      if (studentBranchFilter !== "all" && student.branch !== studentBranchFilter) {
+        return false;
+      }
+      if (studentRoleFilter !== "all" && student.role !== studentRoleFilter) {
+        return false;
+      }
+      if (
+        needle &&
+        !student.username.toLowerCase().includes(needle) &&
+        !student.displayName.toLowerCase().includes(needle)
+      ) {
+        return false;
+      }
+      return true;
+    });
+    return rows.sort((a, b) => {
+      if (studentSort === "name") return a.displayName.localeCompare(b.displayName, "ar");
+      if (studentSort === "role") {
+        if (a.role !== b.role) return a.role === "admin" ? -1 : 1;
+        return a.displayName.localeCompare(b.displayName, "ar");
+      }
+      return (toMillis(b.createdAt) ?? 0) - (toMillis(a.createdAt) ?? 0);
+    });
+  }, [students, studentSearch, studentBranchFilter, studentRoleFilter, studentSort]);
+
+  const filteredAnnouncements = useMemo(() => {
+    if (announcementFilter === "all") return announcements;
+    return announcements.filter(
+      (announcement) => announcementStatus(announcement) === announcementFilter,
     );
-  }, [students, studentSearch]);
+  }, [announcements, announcementFilter]);
 
   const loadBase = useCallback(async (options?: { silent?: boolean }) => {
     if (!db) return;
@@ -400,6 +572,15 @@ export function AdminPage() {
     return { label: "تباين ضعيف", className: "is-bad" };
   }
 
+  function focusAnnouncementEditor() {
+    window.requestAnimationFrame(() => {
+      announcementEditorRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    });
+  }
+
   function editAnnouncement(announcement: Announcement) {
     setDraft({
       id: announcement.id,
@@ -415,11 +596,12 @@ export function AdminPage() {
       loop: announcement.loop,
       active: announcement.active,
       pinned: announcement.pinned,
+      publishAt: dateTimeInputValue(announcement.publishAt),
       expiresAt: dateInputValue(announcement.expiresAt),
     });
     setPreviewNonce((value) => value + 1);
     setTab("announcements");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    focusAnnouncementEditor();
   }
 
   function duplicateAnnouncement(announcement: Announcement) {
@@ -436,11 +618,12 @@ export function AdminPage() {
       loop: announcement.loop,
       active: false,
       pinned: announcement.pinned,
+      publishAt: "",
       expiresAt: "",
     });
     setPreviewNonce((value) => value + 1);
     setTab("announcements");
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    focusAnnouncementEditor();
   }
 
   async function submitAnnouncement(event: FormEvent) {
@@ -448,6 +631,14 @@ export function AdminPage() {
     if (!profile) return;
     if (!draft.title.trim() || !draft.body.trim()) {
       setError("اكتب عنوان الإعلان ونصه أولًا.");
+      return;
+    }
+    const publishAt = draft.publishAt ? new Date(draft.publishAt).getTime() : null;
+    const expiresAt = draft.expiresAt
+      ? new Date(`${draft.expiresAt}T23:59:59`).getTime()
+      : null;
+    if (publishAt !== null && expiresAt !== null && publishAt >= expiresAt) {
+      setError("موعد بدء النشر يجب أن يسبق تاريخ الانتهاء.");
       return;
     }
     setSaving(true);
@@ -468,9 +659,8 @@ export function AdminPage() {
           loop: draft.loop,
           active: draft.active,
           pinned: draft.pinned,
-          expiresAt: draft.expiresAt
-            ? new Date(`${draft.expiresAt}T23:59:59`).getTime()
-            : null,
+          publishAt,
+          expiresAt,
         },
         profile,
       );
@@ -481,7 +671,13 @@ export function AdminPage() {
       );
       setDraft(EMPTY_ANNOUNCEMENT);
       setAnnouncements(await fetchAllAnnouncements());
-      showNotice("تم حفظ الإعلان ونشره للطلاب.");
+      showNotice(
+        !draft.active
+          ? "تم حفظ الإعلان كمسودة."
+          : publishAt !== null && publishAt > Date.now()
+            ? "تم حفظ الإعلان وجدولته للنشر في الموعد المحدد."
+            : "تم حفظ الإعلان ونشره للطلاب.",
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -532,6 +728,279 @@ export function AdminPage() {
         rows.map((row) => (row.uid === student.uid ? { ...row, role: nextRole } : row)),
       );
       showNotice(nextRole === "admin" ? "تم منح صلاحية المشرف." : "تم سحب صلاحية المشرف.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function showStudentDetails(student: AdminUserRow) {
+    setStudentDetail(student);
+    setStudentDetailRows([]);
+    setStudentDetailLoading(true);
+    setError("");
+    if (!db) {
+      setStudentDetailLoading(false);
+      return;
+    }
+    try {
+      const snap = await getDocs(
+        query(collection(db, "enrollments"), where("userId", "==", student.uid)),
+      );
+      setStudentDetailRows(
+        snap.docs
+          .map((item) => {
+            const data = item.data();
+            const subjectId = String(data.subjectId ?? "");
+            return {
+              subjectId,
+              subjectName:
+                subjects.find((subject) => subject.id === subjectId)?.name ?? subjectId,
+              coverageCount: Number(data.coverageCount ?? 0),
+              masteryCount: Number(data.masteryCount ?? 0),
+              totalQuestions: Number(data.totalQuestions ?? 0),
+              stagesCompleted: Number(data.stagesCompleted ?? 0),
+              completedAt: data.masteryCompletedAt ?? data.completedAt,
+            } satisfies StudentEnrollmentRow;
+          })
+          .sort((a, b) => a.subjectName.localeCompare(b.subjectName, "ar")),
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setStudentDetailLoading(false);
+    }
+  }
+
+  function exportStudentsCsv() {
+    const header = ["الاسم", "اسم المستخدم", "الفرع", "الصلاحية", "تاريخ التسجيل"];
+    const lines = filteredStudents.map((student) =>
+      [
+        student.displayName,
+        student.username,
+        branchName(student.branch),
+        student.role === "admin" ? "مشرف" : "طالب",
+        formatDateTime(student.createdAt),
+      ].map(csvCell),
+    );
+    const csv = `\uFEFF${[header.map(csvCell), ...lines].map((row) => row.join(",")).join("\r\n")}`;
+    downloadText(
+      `students-${new Date().toISOString().slice(0, 10)}.csv`,
+      csv,
+      "text/csv;charset=utf-8",
+    );
+    showNotice(`تم تصدير ${formatNumber(filteredStudents.length)} حسابًا.`);
+  }
+
+  async function copyUsername(student: AdminUserRow) {
+    try {
+      await navigator.clipboard.writeText(student.username);
+      showNotice(`تم نسخ اسم المستخدم @${student.username}.`);
+    } catch {
+      setError("تعذر النسخ التلقائي. اسم المستخدم: " + student.username);
+    }
+  }
+
+  async function toggleSubjectActive() {
+    if (!profile || !db || !selectedSubject) return;
+    const nextActive = !selectedSubject.active;
+    if (
+      !window.confirm(
+        nextActive
+          ? `إظهار مادة «${selectedSubject.name}» للطلاب من جديد؟`
+          : `إخفاء مادة «${selectedSubject.name}» عن الطلاب؟ لن يحذف ذلك الأسئلة أو التقدم.`,
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await setDoc(
+        doc(db, "subjects", selectedSubject.id),
+        { active: nextActive },
+        { merge: true },
+      );
+      await logAdminAction(
+        profile,
+        "subject.visibility",
+        `${selectedSubject.name}: ${nextActive ? "إظهار" : "إخفاء"}`,
+      );
+      setSubjects((rows) =>
+        rows.map((subject) =>
+          subject.id === selectedSubject.id ? { ...subject, active: nextActive } : subject,
+        ),
+      );
+      showNotice(nextActive ? "تم إظهار المادة للطلاب." : "تم إخفاء المادة عن الطلاب.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function moveSubject(direction: -1 | 1) {
+    if (!profile || !db) return;
+    const index = subjects.findIndex((subject) => subject.id === subjectId);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= subjects.length) return;
+    const ordered = [...subjects];
+    [ordered[index], ordered[target]] = [ordered[target], ordered[index]];
+    setSaving(true);
+    setError("");
+    try {
+      const batch = writeBatch(db);
+      ordered.forEach((subject, position) => {
+        batch.set(
+          doc(db!, "subjects", subject.id),
+          { sort: position + 1 },
+          { merge: true },
+        );
+      });
+      await batch.commit();
+      await logAdminAction(
+        profile,
+        "subject.reorder",
+        `ترتيب المواد: ${ordered.map((subject) => subject.name).join(" → ")}`,
+      );
+      setSubjects(ordered.map((subject, position) => ({ ...subject, sort: position + 1 })));
+      showNotice("تم تحديث ترتيب المواد.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function applySubjectPreset(presetId: string) {
+    const preset = SUBJECT_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+    setSubjectSettings((previous) =>
+      normalizeSubjectSettings({
+        ...previous,
+        ...preset.settings,
+      }),
+    );
+    showNotice(`تم تطبيق «${preset.label}». اضغط حفظ إعدادات المادة لتثبيتها.`);
+  }
+
+  async function cloneSubjectSettings() {
+    if (!cloneSourceId) {
+      setError("اختر المادة التي تريد نسخ إعداداتها.");
+      return;
+    }
+    if (cloneSourceId === subjectId) {
+      setError("اختر مادة مختلفة عن المادة الحالية.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const source = subjects.find((subject) => subject.id === cloneSourceId);
+      const settings = await fetchSubjectSettings(cloneSourceId);
+      setSubjectSettings(settings);
+      showNotice(
+        `تم نسخ إعدادات «${source?.name ?? cloneSourceId}». راجعها ثم اضغط حفظ إعدادات المادة.`,
+      );
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function resetSubjectSettings() {
+    if (!window.confirm("استعادة الإعدادات الافتراضية لهذه المادة؟")) return;
+    setSubjectSettings(normalizeSubjectSettings(DEFAULT_SUBJECT_SETTINGS));
+    showNotice("تمت استعادة القيم الافتراضية. اضغط حفظ إعدادات المادة لتثبيتها.");
+  }
+
+  async function exportAdminBackup() {
+    if (!profile) return;
+    setSaving(true);
+    setError("");
+    try {
+      const subjectSettingsEntries = await Promise.all(
+        subjects.map(async (subject) => ({
+          subjectId: subject.id,
+          name: subject.name,
+          settings: await fetchSubjectSettings(subject.id),
+        })),
+      );
+      const backup = {
+        format: "bakaloriastages-admin-backup",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        global: globalSettings,
+        subjects: subjects.map((subject) => ({
+          id: subject.id,
+          name: subject.name,
+          active: subject.active,
+          sort: subject.sort ?? 0,
+          branches: subject.branches,
+        })),
+        subjectSettings: Object.fromEntries(
+          subjectSettingsEntries.map((entry) => [entry.subjectId, entry.settings]),
+        ),
+      };
+      downloadJson(
+        `bakaloriastages-backup-${new Date().toISOString().slice(0, 10)}.json`,
+        backup,
+      );
+      await logAdminAction(
+        profile,
+        "settings.backup.export",
+        `${subjects.length} مادة + الإعدادات العامة`,
+      );
+      showNotice("تم تصدير النسخة الاحتياطية للإعدادات.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function importAdminBackup(file: File | null) {
+    if (!file || !profile) return;
+    setSaving(true);
+    setError("");
+    try {
+      const parsed = JSON.parse(await file.text()) as {
+        format?: string;
+        global?: Partial<GlobalSettings>;
+        subjectSettings?: Record<string, Partial<SubjectSettings>>;
+      };
+      if (parsed.format !== "bakaloriastages-admin-backup" || !parsed.global) {
+        throw new Error("الملف ليس نسخة احتياطية صالحة من لوحة المدير.");
+      }
+      const nextGlobal = normalizeGlobalSettings(parsed.global);
+      const entries = Object.entries(parsed.subjectSettings ?? {}).filter(([id]) =>
+        subjects.some((subject) => subject.id === id),
+      );
+      if (
+        !window.confirm(
+          `استيراد الإعدادات العامة و${formatNumber(entries.length)} مادة من النسخة الاحتياطية؟`,
+        )
+      ) {
+        return;
+      }
+      await saveGlobalSettings(nextGlobal, profile.uid);
+      setGlobalSettings(nextGlobal);
+      applyStudentPalette(nextGlobal);
+      for (const [id, settings] of entries) {
+        await saveSubjectSettings(id, normalizeSubjectSettings(settings), profile.uid);
+      }
+      if (subjectId) {
+        setSubjectSettings(await fetchSubjectSettings(subjectId));
+      }
+      await logAdminAction(
+        profile,
+        "settings.backup.import",
+        `الإعدادات العامة + ${entries.length} مادة`,
+      );
+      showNotice("تم استيراد النسخة الاحتياطية بنجاح.");
+      await loadBase({ silent: true });
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -1166,6 +1635,47 @@ export function AdminPage() {
               <span>اسم المستخدم وكلمة المرور</span>
             </button>
           </div>
+
+          <section className="admin-card admin-backup">
+            <div className="admin-card__heading">
+              <div>
+                <span className="eyebrow"><ShieldIcon /> النسخ الاحتياطي</span>
+                <h2>إعدادات المنصة والمواد</h2>
+                <p className="muted small">
+                  صدّر نسخة JSON من الإعدادات العامة وإعدادات كل المواد، أو استعدها على
+                  جهاز آخر. لا تتضمن النسخة حسابات الطلاب أو كلمات المرور.
+                </p>
+              </div>
+              <div className="button-row">
+                <button
+                  className="button button--primary button--sm"
+                  type="button"
+                  onClick={() => void exportAdminBackup()}
+                  disabled={saving}
+                >
+                  تصدير نسخة
+                </button>
+                <button
+                  className="button button--ghost button--sm"
+                  type="button"
+                  onClick={() => backupInputRef.current?.click()}
+                  disabled={saving}
+                >
+                  استيراد نسخة
+                </button>
+                <input
+                  ref={backupInputRef}
+                  className="hidden-file"
+                  type="file"
+                  accept=".json,application/json"
+                  onChange={(event) => {
+                    void importAdminBackup(event.target.files?.[0] ?? null);
+                    event.target.value = "";
+                  }}
+                />
+              </div>
+            </div>
+          </section>
         </div>
       ) : null}
 
@@ -1200,6 +1710,98 @@ export function AdminPage() {
                 </button>
               </div>
             </div>
+
+            {selectedSubject ? (
+              <>
+                <div className="admin-subject-toolbar">
+                  <div className="admin-subject-presets">
+                    {SUBJECT_PRESETS.map((preset) => (
+                      <button
+                        key={preset.id}
+                        className="admin-preset"
+                        type="button"
+                        title={preset.description}
+                        onClick={() => applySubjectPreset(preset.id)}
+                        disabled={saving}
+                      >
+                        <strong>{preset.label}</strong>
+                        <small>{preset.description}</small>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="admin-inline admin-subject-copy">
+                    <select
+                      className="input admin-select"
+                      value={cloneSourceId}
+                      onChange={(event) => setCloneSourceId(event.target.value)}
+                      aria-label="المادة المصدر لنسخ الإعدادات"
+                    >
+                      <option value="">نسخ إعدادات من مادة...</option>
+                      {subjects
+                        .filter((subject) => subject.id !== subjectId)
+                        .map((subject) => (
+                          <option value={subject.id} key={subject.id}>
+                            {subject.name}
+                          </option>
+                        ))}
+                    </select>
+                    <button
+                      className="button button--ghost button--sm"
+                      type="button"
+                      onClick={() => void cloneSubjectSettings()}
+                      disabled={saving || !cloneSourceId}
+                    >
+                      نسخ
+                    </button>
+                    <button
+                      className="button button--ghost button--sm"
+                      type="button"
+                      onClick={resetSubjectSettings}
+                      disabled={saving}
+                    >
+                      <RefreshIcon />
+                      استعادة الافتراضي
+                    </button>
+                  </div>
+                </div>
+
+                <div className="admin-subject-visibility">
+                  <span
+                    className={selectedSubject.active ? "badge badge--green" : "badge badge--red"}
+                  >
+                    {selectedSubject.active ? "ظاهرة للطلاب" : "مخفية عن الطلاب"}
+                  </span>
+                  <button
+                    className="button button--ghost button--sm"
+                    type="button"
+                    onClick={() => void toggleSubjectActive()}
+                    disabled={saving}
+                  >
+                    {selectedSubject.active ? "إخفاء المادة" : "إظهار المادة"}
+                  </button>
+                  <button
+                    className="button button--ghost button--sm"
+                    type="button"
+                    onClick={() => void moveSubject(-1)}
+                    disabled={saving || subjects.findIndex((subject) => subject.id === subjectId) <= 0}
+                  >
+                    تقديم
+                  </button>
+                  <button
+                    className="button button--ghost button--sm"
+                    type="button"
+                    onClick={() => void moveSubject(1)}
+                    disabled={
+                      saving ||
+                      subjects.findIndex((subject) => subject.id === subjectId) >=
+                        subjects.length - 1
+                    }
+                  >
+                    تأخير
+                  </button>
+                </div>
+              </>
+            ) : null}
 
             {loadingSettings ? (
               <InlineLoader label="نقرأ إعدادات المادة..." />
@@ -1421,7 +2023,7 @@ export function AdminPage() {
 
       {effectiveTab === "announcements" ? (
         <div className="admin-panel admin-split admin-split--announcements">
-          <section className="admin-card">
+          <section className="admin-card announcement-editor" ref={announcementEditorRef}>
             <div className="admin-card__heading">
               <div>
                 <span className="eyebrow"><MegaphoneIcon /> رسالة جديدة</span>
@@ -1498,6 +2100,21 @@ export function AdminPage() {
                       }))
                     }
                   />
+                </label>
+                <label className="field">
+                  <span>بدء النشر (اختياري)</span>
+                  <input
+                    className="input"
+                    type="datetime-local"
+                    value={draft.publishAt}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        publishAt: event.target.value,
+                      }))
+                    }
+                  />
+                  <small>اتركه فارغًا للنشر فورًا، أو حدّد موعدًا ليظهر تلقائيًا.</small>
                 </label>
                 <label className="field">
                   <span>حركة الإعلان</span>
@@ -1677,35 +2294,71 @@ export function AdminPage() {
               <div className="announcement-preview">
                 <div className="announcement-preview__head">
                   <span className="eyebrow"><SparklesIcon /> معاينة مباشرة</span>
-                  <button
-                    className="button button--ghost button--sm"
-                    type="button"
-                    onClick={() => setPreviewNonce((value) => value + 1)}
-                  >
-                    <RefreshIcon />
-                    إعادة الحركة
-                  </button>
+                  <div className="announcement-preview__actions">
+                    <div
+                      className="announcement-preview__devices"
+                      role="group"
+                      aria-label="حجم معاينة الإعلان"
+                    >
+                      <button
+                        className={`button button--ghost button--sm${
+                          previewDevice === "desktop" ? " is-active" : ""
+                        }`}
+                        type="button"
+                        aria-pressed={previewDevice === "desktop"}
+                        onClick={() => setPreviewDevice("desktop")}
+                      >
+                        سطح المكتب
+                      </button>
+                      <button
+                        className={`button button--ghost button--sm${
+                          previewDevice === "mobile" ? " is-active" : ""
+                        }`}
+                        type="button"
+                        aria-pressed={previewDevice === "mobile"}
+                        onClick={() => setPreviewDevice("mobile")}
+                      >
+                        الهاتف
+                      </button>
+                    </div>
+                    <button
+                      className="button button--ghost button--sm"
+                      type="button"
+                      onClick={() => setPreviewNonce((value) => value + 1)}
+                    >
+                      <RefreshIcon />
+                      إعادة الحركة
+                    </button>
+                  </div>
                 </div>
-                <article
-                  className={announcementClasses({
-                    tone: draft.tone,
-                    animation: draft.animation,
-                    font: draft.font,
-                    speed: draft.speed,
-                    pattern: draft.pattern,
-                    background: draft.background,
-                    loop: draft.loop,
-                  })}
-                  style={announcementStyle(draft)}
-                  key={`${previewNonce}-${draft.animation}-${draft.speed}-${draft.font}-${draft.pattern}-${draft.background}-${draft.textColor}-${draft.loop}`}
+                <div
+                  className={`announcement-preview__surface${
+                    previewDevice === "mobile"
+                      ? " announcement-preview__surface--mobile"
+                      : ""
+                  }`}
                 >
-                  <span className="notice__icon"><MegaphoneIcon /></span>
-                  <AnnouncementContent
-                    title={draft.title || "عنوان الإعلان"}
-                    body={draft.body || "سيظهر نص رسالتك هنا بالحركة والخط المختارين."}
-                    banner={draft.animation === "banner"}
-                  />
-                </article>
+                  <article
+                    className={announcementClasses({
+                      tone: draft.tone,
+                      animation: draft.animation,
+                      font: draft.font,
+                      speed: draft.speed,
+                      pattern: draft.pattern,
+                      background: draft.background,
+                      loop: draft.loop,
+                    })}
+                    style={announcementStyle(draft)}
+                    key={`${previewNonce}-${draft.animation}-${draft.speed}-${draft.font}-${draft.pattern}-${draft.background}-${draft.textColor}-${draft.loop}`}
+                  >
+                    <span className="notice__icon"><MegaphoneIcon /></span>
+                    <AnnouncementContent
+                      title={draft.title || "عنوان الإعلان"}
+                      body={draft.body || "سيظهر نص رسالتك هنا بالحركة والخط المختارين."}
+                      banner={draft.animation === "banner"}
+                    />
+                  </article>
+                </div>
               </div>
 
               <div className="admin-toggle-row">
@@ -1747,27 +2400,48 @@ export function AdminPage() {
             <div className="admin-card__heading">
               <div>
                 <span className="eyebrow"><BellIcon /> سجل الإعلانات</span>
-                <h2>{formatNumber(announcements.length)} رسالة</h2>
+                <h2>
+                  {formatNumber(filteredAnnouncements.length)} من{" "}
+                  {formatNumber(announcements.length)} رسالة
+                </h2>
               </div>
-              <button
-                className="button button--ghost button--sm"
-                type="button"
-                onClick={() => void loadBase()}
-                disabled={saving}
-              >
-                <RefreshIcon />
-                تحديث
-              </button>
+              <div className="admin-inline admin-announcement-filters">
+                <select
+                  className="input admin-select"
+                  value={announcementFilter}
+                  onChange={(event) =>
+                    setAnnouncementFilter(event.target.value as AnnouncementStatusFilter)
+                  }
+                  aria-label="تصفية الإعلانات حسب الحالة"
+                >
+                  <option value="all">كل الحالات</option>
+                  <option value="live">منشور الآن</option>
+                  <option value="scheduled">مجدول</option>
+                  <option value="draft">مسودة</option>
+                  <option value="expired">منتهي</option>
+                </select>
+                <button
+                  className="button button--ghost button--sm"
+                  type="button"
+                  onClick={() => void loadBase()}
+                  disabled={saving}
+                >
+                  <RefreshIcon />
+                  تحديث
+                </button>
+              </div>
             </div>
             {announcements.length === 0 ? (
               <p className="muted">لا توجد إعلانات بعد.</p>
+            ) : filteredAnnouncements.length === 0 ? (
+              <p className="muted">لا توجد إعلانات مطابقة للحالة المختارة.</p>
             ) : (
               <div className="admin-announcement-list">
-                {announcements.map((announcement) => (
+                {filteredAnnouncements.map((announcement) => (
                   <article className="admin-announcement" key={announcement.id}>
                     <div className="admin-announcement__top">
-                      <span className={`badge ${announcement.active ? "badge--green" : "badge--soft"}`}>
-                        {announcement.active ? "منشور" : "مسودة"}
+                      <span className={announcementStatusBadge(announcementStatus(announcement))}>
+                        {announcementStatusLabel(announcementStatus(announcement))}
                       </span>
                       {announcement.pinned ? <span className="badge badge--gold">مثبّت</span> : null}
                       <span className="badge badge--soft">
@@ -1790,6 +2464,11 @@ export function AdminPage() {
                         <span className="badge badge--gold">خلفية مزخرفة</span>
                       ) : null}
                       <span className="muted small">{formatDateTime(announcement.createdAt)}</span>
+                      {announcement.publishAt ? (
+                        <span className="muted small">
+                          يبدأ {formatDateTime(announcement.publishAt)}
+                        </span>
+                      ) : null}
                     </div>
                     <h3>{announcement.title}</h3>
                     <p>{announcement.body}</p>
@@ -1833,12 +2512,63 @@ export function AdminPage() {
                 <span className="eyebrow"><TrophyIcon /> الطلاب</span>
                 <h2>الحسابات والصلاحيات</h2>
               </div>
-              <input
-                className="input admin-search"
-                value={studentSearch}
-                onChange={(event) => setStudentSearch(event.target.value)}
-                placeholder="ابحث باسم المستخدم أو الاسم الظاهر..."
-              />
+              <div className="admin-inline admin-student-tools">
+                <input
+                  className="input admin-search"
+                  value={studentSearch}
+                  onChange={(event) => setStudentSearch(event.target.value)}
+                  placeholder="ابحث باسم المستخدم أو الاسم الظاهر..."
+                />
+                <button
+                  className="button button--ghost button--sm"
+                  type="button"
+                  onClick={exportStudentsCsv}
+                >
+                  تصدير CSV
+                </button>
+              </div>
+            </div>
+            <div className="admin-field-grid admin-student-filters">
+              <label className="field">
+                <span>الفرع</span>
+                <select
+                  className="input"
+                  value={studentBranchFilter}
+                  onChange={(event) =>
+                    setStudentBranchFilter(event.target.value as StudentBranchFilter)
+                  }
+                >
+                  <option value="all">كل الفروع</option>
+                  <option value="scientific">علمي</option>
+                  <option value="literary">أدبي</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>الصلاحية</span>
+                <select
+                  className="input"
+                  value={studentRoleFilter}
+                  onChange={(event) =>
+                    setStudentRoleFilter(event.target.value as StudentRoleFilter)
+                  }
+                >
+                  <option value="all">الكل</option>
+                  <option value="student">طلاب</option>
+                  <option value="admin">مشرفون</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>الترتيب</span>
+                <select
+                  className="input"
+                  value={studentSort}
+                  onChange={(event) => setStudentSort(event.target.value as StudentSort)}
+                >
+                  <option value="newest">الأحدث تسجيلًا</option>
+                  <option value="name">الاسم أبجديًا</option>
+                  <option value="role">الصلاحية ثم الاسم</option>
+                </select>
+              </label>
             </div>
             <div className="admin-table-wrap">
               <table className="admin-table">
@@ -1870,14 +2600,30 @@ export function AdminPage() {
                       </td>
                       <td>{formatDateTime(student.createdAt)}</td>
                       <td>
-                        <button
-                          className="button button--ghost button--sm"
-                          type="button"
-                          disabled={saving || student.uid === profile.uid}
-                          onClick={() => void toggleRole(student)}
-                        >
-                          {student.role === "admin" ? "سحب الإشراف" : "تعيين مشرفًا"}
-                        </button>
+                        <div className="button-row admin-student-actions">
+                          <button
+                            className="button button--ghost button--sm"
+                            type="button"
+                            onClick={() => void showStudentDetails(student)}
+                          >
+                            تفاصيل
+                          </button>
+                          <button
+                            className="button button--ghost button--sm"
+                            type="button"
+                            onClick={() => void copyUsername(student)}
+                          >
+                            نسخ الاسم
+                          </button>
+                          <button
+                            className="button button--ghost button--sm"
+                            type="button"
+                            disabled={saving || student.uid === profile.uid}
+                            onClick={() => void toggleRole(student)}
+                          >
+                            {student.role === "admin" ? "سحب الإشراف" : "تعيين مشرفًا"}
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -1886,6 +2632,62 @@ export function AdminPage() {
             </div>
             {filteredStudents.length === 0 ? (
               <p className="muted">لا توجد نتائج مطابقة.</p>
+            ) : null}
+
+            {studentDetail ? (
+              <div className="admin-student-detail">
+                <div className="admin-student-detail__head">
+                  <div>
+                    <span className="eyebrow"><UserIcon /> ملف الطالب</span>
+                    <h3>{studentDetail.displayName}</h3>
+                    <p className="muted small">
+                      @{studentDetail.username} • {branchName(studentDetail.branch)} •{" "}
+                      {studentDetail.role === "admin" ? "مشرف" : "طالب"}
+                    </p>
+                  </div>
+                  <button
+                    className="button button--ghost button--sm"
+                    type="button"
+                    onClick={() => setStudentDetail(null)}
+                  >
+                    <XIcon />
+                    إغلاق
+                  </button>
+                </div>
+                {studentDetailLoading ? (
+                  <p className="muted small">نقرأ تقدم الطالب...</p>
+                ) : studentDetailRows.length === 0 ? (
+                  <p className="muted small">لم ينضم هذا الطالب إلى أي مادة بعد.</p>
+                ) : (
+                  <div className="admin-student-subjects">
+                    {studentDetailRows.map((row) => {
+                      const percent =
+                        row.totalQuestions > 0
+                          ? Math.min(100, Math.round((row.masteryCount / row.totalQuestions) * 100))
+                          : 0;
+                      return (
+                        <div className="admin-student-subject" key={row.subjectId}>
+                          <div className="admin-student-subject__top">
+                            <strong>{row.subjectName}</strong>
+                            <span className="muted small">
+                              {formatNumber(row.masteryCount)} / {formatNumber(row.totalQuestions)}{" "}
+                              إتقان
+                            </span>
+                          </div>
+                          <div className="admin-progress-track" aria-hidden="true">
+                            <span style={{ width: `${percent}%` }} />
+                          </div>
+                          <small className="muted">
+                            {formatNumber(row.coverageCount)} مشاهدة •{" "}
+                            {formatNumber(row.stagesCompleted)} مرحلة • {percent}% إتقان
+                            {row.completedAt ? ` • اكتمل ${formatDateTime(row.completedAt)}` : ""}
+                          </small>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             ) : null}
           </section>
         </div>

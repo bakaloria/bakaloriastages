@@ -87,8 +87,8 @@ export function LeaderboardPage() {
           </span>
           <h1>المتصدرون</h1>
           <p>
-            الترتيب يعتمد على نسبة الإتقان أولًا، ثم الإجابات الصحيحة من أول
-            محاولة في الأسئلة المصححة آليًا.
+            الترتيب يعتمد على نسبة الإتقان في الأسئلة المصححة آليًا فقط، ثم
+            التغطية. لا تدخل الأسئلة المقالية والقصيرة في الترتيب.
           </p>
         </div>
         <div className="page-heading__badge">
@@ -140,8 +140,8 @@ export function LeaderboardPage() {
                   <span className="podium-card__rank">#{formatNumber(row.rank)}</span>
                   <strong>{row.displayName}</strong>
                   <span className="podium-card__score">
-                    {formatPercent(row.masteryCount, row.totalQuestions)}
-                    <small>نسبة الإتقان</small>
+                    {formatPercent(row.autoFirstCorrect, row.totalQuestions)}
+                    <small>إتقان آلي</small>
                   </span>
                   <div className="podium-card__meta">
                     <span>{formatNumber(row.masteryCount)} متقن</span>
@@ -156,9 +156,9 @@ export function LeaderboardPage() {
             <div className="leaderboard-table__head">
               <span>الترتيب</span>
               <span>الطالب</span>
-              <span>نسبة الإتقان</span>
+              <span>الإتقان الآلي</span>
               <span>التغطية</span>
-              <span>أول محاولة</span>
+              <span>متقن كلي</span>
             </div>
             {rows.map((row) => {
               const own = row.userId === profile?.uid;
@@ -175,10 +175,10 @@ export function LeaderboardPage() {
                     </span>
                   </span>
                   <span>
-                    <strong>{formatPercent(row.masteryCount, row.totalQuestions)}</strong>
+                    <strong>{formatPercent(row.autoFirstCorrect, row.totalQuestions)}</strong>
                   </span>
                   <span>{formatNumber(row.coverageCount)} / {formatNumber(row.totalQuestions)}</span>
-                  <span>{formatNumber(row.autoFirstCorrect)}</span>
+                  <span>{formatNumber(row.masteryCount)}</span>
                 </div>
               );
             })}

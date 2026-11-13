@@ -1613,6 +1613,7 @@ async function selfGradeQuestion(
     const enrollmentSnap = await tx.get(enrollmentRef);
     if (!enrollmentSnap.exists()) throw appError("ENROLLMENT_NOT_FOUND", "not-found");
     const enrollment = enrollmentSnap.data();
+    const adaptive = adaptivePlanState(enrollment, settings);
     const unitProgressSnap = await tx.get(unitProgressRef);
     const oldUnit = unitProgressSnap.exists() ? unitProgressSnap.data() : null;
 
@@ -1691,7 +1692,7 @@ async function selfGradeQuestion(
     tx.update(enrollmentRef, {
       masteryCount,
       masteryTarget: target,
-      sessionStages: settings.sessionStages,
+      ...(adaptive.enabled ? {} : { sessionStages: settings.sessionStages }),
       completedAt,
       masteryCompletedAt,
     });
@@ -1895,9 +1896,10 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
 
 async function getLeaderboard(subjectId: string) {
   const firestore = database();
-  // Rank by mastery ratio, not by raw question volume. We fetch a generous
-  // candidate set and sort in the browser so existing enrollments that do not
-  // have a derived percentage field still appear correctly.
+  // Rank by the share of auto-graded questions answered correctly on the
+  // first attempt, not by raw question volume. Self-graded questions never
+  // enter this score. We fetch a generous candidate set and sort in the browser
+  // so existing enrollments without a derived percentage field still work.
   const snap = await getDocs(
     query(
       collection(firestore, "enrollments"),
@@ -1922,9 +1924,9 @@ async function getLeaderboard(subjectId: string) {
     })
     .sort((left, right) => {
       const leftRatio =
-        left.totalQuestions > 0 ? left.masteryCount / left.totalQuestions : 0;
+        left.totalQuestions > 0 ? left.autoFirstCorrect / left.totalQuestions : 0;
       const rightRatio =
-        right.totalQuestions > 0 ? right.masteryCount / right.totalQuestions : 0;
+        right.totalQuestions > 0 ? right.autoFirstCorrect / right.totalQuestions : 0;
       if (rightRatio !== leftRatio) return rightRatio - leftRatio;
       if (right.autoFirstCorrect !== left.autoFirstCorrect) {
         return right.autoFirstCorrect - left.autoFirstCorrect;

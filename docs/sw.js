@@ -1,4 +1,4 @@
-const CACHE = "bakaloriastages-v14";
+const CACHE = "bakaloriastages-v15";
 const BASE = "/bakaloriastages/";
 
 self.addEventListener("install", (event) => {

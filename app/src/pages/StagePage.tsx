@@ -48,6 +48,12 @@ interface ResultMeta {
   coverageCount?: number;
   masteryCount?: number;
   masteryTarget?: number;
+  adaptiveLevel?: number;
+  adaptiveLevelName?: string;
+  adaptiveLevelChanged?: "up" | "down" | null;
+  nextStageNew?: number;
+  nextStageReview?: number;
+  nextStageIntervalMinutes?: number;
 }
 
 function answerObject(question: StageQuestion, answer: unknown): Record<string, unknown> {
@@ -88,6 +94,7 @@ export function StagePage() {
   const [lockTarget, setLockTarget] = useState<number | null>(null);
   const [adminLocked, setAdminLocked] = useState(false);
   const [stageLocked, setStageLocked] = useState(false);
+  const [dailyCapLocked, setDailyCapLocked] = useState(false);
   const [lockMessage, setLockMessage] = useState("");
   const [feedbackMode, setFeedbackMode] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -102,6 +109,12 @@ export function StagePage() {
         sessionComplete: payload.sessionComplete,
         nextAvailableAt: payload.nextAvailableAt,
         stageIntervalMinutes: payload.stageIntervalMinutes,
+        adaptiveLevel: payload.adaptiveLevel,
+        adaptiveLevelName: payload.adaptiveLevelName,
+        adaptiveLevelChanged: payload.adaptiveLevelChanged,
+        nextStageNew: payload.nextStageNew,
+        nextStageReview: payload.nextStageReview,
+        nextStageIntervalMinutes: payload.nextStageIntervalMinutes,
       });
       const graded: Record<string, SelfScore> = {};
       for (const result of payload.results) {
@@ -120,12 +133,14 @@ export function StagePage() {
     if (!subjectId) return;
     setPhase("loading");
     setError("");
+    setDailyCapLocked(false);
     try {
       const data: StartStageResponse = await api.startStage(subjectId);
       if ("locked" in data) {
         setLockTarget(data.nextAvailableAt);
         setAdminLocked(Boolean(data.adminLocked));
         setStageLocked(Boolean(data.stageLocked));
+        setDailyCapLocked(Boolean(data.dailyCapLocked));
         setLockMessage(String(data.lockMessage ?? ""));
         setPhase("locked");
         return;
@@ -227,6 +242,12 @@ export function StagePage() {
         coverageCount: response.coverageCount,
         masteryCount: response.masteryCount,
         masteryTarget: response.masteryTarget,
+        adaptiveLevel: response.adaptiveLevel,
+        adaptiveLevelName: response.adaptiveLevelName,
+        adaptiveLevelChanged: response.adaptiveLevelChanged,
+        nextStageNew: response.nextStageNew,
+        nextStageReview: response.nextStageReview,
+        nextStageIntervalMinutes: response.nextStageIntervalMinutes,
       });
       setSelfGraded({});
       setFeedbackMode(false);
@@ -273,6 +294,7 @@ export function StagePage() {
       if (resultMeta.sessionComplete) {
         setLockTarget(resultMeta.nextAvailableAt ?? Date.now());
         setAdminLocked(false);
+        setDailyCapLocked(false);
         setLockMessage("");
         setPhase("locked");
         return;
@@ -318,19 +340,27 @@ export function StagePage() {
   if (phase === "locked") {
     return (
       <div className="page">
-        <div className={`session-card${adminLocked ? " session-card--admin-lock" : ""}${stageLocked ? " session-card--stage-lock" : ""}`}>
+        <div className={`session-card${adminLocked ? " session-card--admin-lock" : ""}${stageLocked || dailyCapLocked ? " session-card--stage-lock" : ""}`}>
           <div className="session-card__icon">
             {adminLocked ? <LockIcon /> : <ClockIcon />}
           </div>
           <span className="eyebrow">
-            {adminLocked ? "إعلان إداري" : stageLocked ? "فاصل بين المراحل" : "انتهت الجلسة"}
+            {adminLocked
+              ? "إعلان إداري"
+              : dailyCapLocked
+                ? "سقف اليوم"
+                : stageLocked
+                  ? "فاصل بين المراحل"
+                  : "انتهت الجلسة"}
           </span>
           <h1>
             {adminLocked
               ? "المراحل مغلقة مؤقتًا"
-              : stageLocked
-                ? "استراحة قصيرة بين المراحل"
-                : "خذ قسطًا من الراحة"}
+              : dailyCapLocked
+                ? "أخذت قسطك اليوم"
+                : stageLocked
+                  ? "استراحة قصيرة بين المراحل"
+                  : "خذ قسطًا من الراحة"}
           </h1>
           {adminLocked ? (
             <>
@@ -343,14 +373,21 @@ export function StagePage() {
           ) : (
             <>
               <p>
-                {stageLocked
-                  ? "حددت الإدارة فاصلًا زمنيًا بين المراحل حتى يثبت ما تعلمته. المرحلة التالية تبدأ بعد:"
-                  : "المراجعة المتباعدة تحتاج فاصلًا حتى يثبت ما تعلمته. الجلسة التالية تبدأ بعد:"}
+                {dailyCapLocked
+                  ? lockMessage ||
+                    "وصلت إلى سقف الأسئلة اليومي. هذه استراحة لحماية تركيزك، وسيعود السقف بعد منتصف الليل."
+                  : stageLocked
+                    ? "الخطة تحدد فاصلًا زمنيًا بين المراحل حتى يثبت ما تعلمته. المرحلة التالية تبدأ بعد:"
+                    : "المراجعة المتباعدة تحتاج فاصلًا حتى يثبت ما تعلمته. الجلسة التالية تبدأ بعد:"}
               </p>
               <div className="session-card__countdown">
                 <Countdown target={lockTarget} />
               </div>
-              <p className="muted small">لا تحتاج إلى البقاء في الصفحة؛ سيعود العدّاد عند فتحها مرة أخرى.</p>
+              <p className="muted small">
+                {dailyCapLocked
+                  ? "عد بعد منتصف الليل لتكمل بسقف جديد. لا تحتاج إلى البقاء في الصفحة."
+                  : "لا تحتاج إلى البقاء في الصفحة؛ سيعود العدّاد عند فتحها مرة أخرى."}
+              </p>
             </>
           )}
           <div className="button-row">
@@ -430,12 +467,40 @@ export function StagePage() {
                   <Countdown target={nextAvailableAt} />
                 </span>
               </div>
-            ) : resultMeta?.stageIntervalMinutes ? (
+            ) : (resultMeta?.nextStageIntervalMinutes ??
+              resultMeta?.stageIntervalMinutes) ? (
               <div className="inline-alert inline-alert--gold">
                 <ClockIcon />
                 <span>
                   بعد تأكيد الاطلاع، تبدأ المرحلة التالية بعد{" "}
-                  <strong>{formatNumber(resultMeta.stageIntervalMinutes)}</strong> دقيقة.
+                  <strong>
+                    {formatNumber(
+                      resultMeta.nextStageIntervalMinutes ??
+                        resultMeta.stageIntervalMinutes,
+                    )}
+                  </strong>{" "}
+                  دقيقة.
+                </span>
+              </div>
+            ) : null}
+            {resultMeta?.adaptiveLevelChanged ? (
+              <div className="inline-alert inline-alert--gold">
+                <SparklesIcon />
+                <span>
+                  {resultMeta.adaptiveLevelChanged === "up"
+                    ? `ترقيت إلى مستوى «${resultMeta.adaptiveLevelName ?? ""}».`
+                    : `عدنا بك إلى مستوى «${resultMeta.adaptiveLevelName ?? ""}» لزيادة المراجعة.`}
+                </span>
+              </div>
+            ) : null}
+            {!resultMeta?.sessionComplete &&
+            resultMeta?.nextStageNew !== undefined &&
+            resultMeta?.nextStageReview !== undefined ? (
+              <div className="inline-alert">
+                <RefreshIcon />
+                <span>
+                  المرحلة القادمة: {formatNumber(resultMeta.nextStageNew)} جديد +{" "}
+                  {formatNumber(resultMeta.nextStageReview)} مراجعة.
                 </span>
               </div>
             ) : null}

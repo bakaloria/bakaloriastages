@@ -8,7 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { api } from "../lib/api";
 import { db } from "../lib/firebase";
 import { errorMessage } from "../lib/errors";
-import { formatNumber } from "../lib/format";
+import { formatNumber, formatPercent } from "../lib/format";
 import type { LeaderboardRow, Subject } from "../lib/types";
 
 export function LeaderboardPage() {
@@ -86,7 +86,10 @@ export function LeaderboardPage() {
             ترتيب المادة
           </span>
           <h1>المتصدرون</h1>
-          <p>الترتيب يعتمد على الإجابات الصحيحة من أول محاولة في الأسئلة المصححة آليًا.</p>
+          <p>
+            الترتيب يعتمد على نسبة الإتقان أولًا، ثم الإجابات الصحيحة من أول
+            محاولة في الأسئلة المصححة آليًا.
+          </p>
         </div>
         <div className="page-heading__badge">
           <AwardIcon />
@@ -137,8 +140,8 @@ export function LeaderboardPage() {
                   <span className="podium-card__rank">#{formatNumber(row.rank)}</span>
                   <strong>{row.displayName}</strong>
                   <span className="podium-card__score">
-                    {formatNumber(row.autoFirstCorrect)}
-                    <small>إجابة أولى صحيحة</small>
+                    {formatPercent(row.masteryCount, row.totalQuestions)}
+                    <small>نسبة الإتقان</small>
                   </span>
                   <div className="podium-card__meta">
                     <span>{formatNumber(row.masteryCount)} متقن</span>
@@ -153,9 +156,9 @@ export function LeaderboardPage() {
             <div className="leaderboard-table__head">
               <span>الترتيب</span>
               <span>الطالب</span>
-              <span>أول محاولة</span>
-              <span>الإتقان</span>
+              <span>نسبة الإتقان</span>
               <span>التغطية</span>
+              <span>أول محاولة</span>
             </div>
             {rows.map((row) => {
               const own = row.userId === profile?.uid;
@@ -171,9 +174,11 @@ export function LeaderboardPage() {
                       {own ? <small><SparklesIcon /> أنت</small> : null}
                     </span>
                   </span>
-                  <span><strong>{formatNumber(row.autoFirstCorrect)}</strong></span>
-                  <span>{formatNumber(row.masteryCount)}</span>
+                  <span>
+                    <strong>{formatPercent(row.masteryCount, row.totalQuestions)}</strong>
+                  </span>
                   <span>{formatNumber(row.coverageCount)} / {formatNumber(row.totalQuestions)}</span>
+                  <span>{formatNumber(row.autoFirstCorrect)}</span>
                 </div>
               );
             })}

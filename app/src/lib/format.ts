@@ -26,6 +26,15 @@ export function formatPercent(value: number, total: number): string {
   return percentFormatter.format(Math.min(1, Math.max(0, value / total)));
 }
 
+export function formatDurationMinutes(value: unknown): string {
+  const minutes = Math.max(0, Math.round(Number(value) || 0));
+  if (minutes < 60) return `${formatNumber(minutes)} دقيقة`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (rest === 0) return `${formatNumber(hours)} ساعة`;
+  return `${formatNumber(hours)} ساعة و${formatNumber(rest)} دقيقة`;
+}
+
 export function toMillis(value: unknown): number | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "number") return value;

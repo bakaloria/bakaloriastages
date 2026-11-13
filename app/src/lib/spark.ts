@@ -22,7 +22,7 @@ import {
   type DocumentData,
 } from "firebase/firestore";
 import { auth, db, STUDENT_EMAIL_DOMAIN } from "./firebase";
-import { fetchGlobalSettings, fetchSubjectSettings } from "./settings";
+import { fetchGlobalSettings, fetchSubjectSettings, getAdaptiveLevel } from "./settings";
 import type {
   Branch,
   Certificate,
@@ -222,6 +222,121 @@ function asBoolean(value: unknown): boolean | null {
   return null;
 }
 
+function clampNumber(
+  value: unknown,
+  min: number,
+  max: number,
+  fallback: number,
+): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(min, Math.min(max, parsed));
+}
+
+function localDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function nextLocalMidnight(date: Date): number {
+  const next = new Date(date);
+  next.setHours(24, 0, 0, 0);
+  return next.getTime();
+}
+
+interface AdaptivePlanState {
+  enabled: boolean;
+  migrated: boolean;
+  level: number;
+  levelName: string;
+  stageSize: number;
+  newPerStage: number;
+  reviewPerStage: number;
+  sessionStages: number;
+  stageIntervalMinutes: number;
+  intervalMinutes: number;
+  passThreshold: number;
+  strongSessions: number;
+}
+
+function adaptivePlanState(
+  enrollment: Record<string, unknown>,
+  settings: SubjectSettings,
+): AdaptivePlanState {
+  const levels = Array.isArray(settings.adaptiveLevels) ? settings.adaptiveLevels : [];
+  const maxLevel = Math.max(0, levels.length - 1);
+  const hasAdaptiveLevel = Number.isFinite(Number(enrollment.adaptiveLevel));
+  const rawLevel = hasAdaptiveLevel
+    ? Number(enrollment.adaptiveLevel)
+    : settings.adaptiveInitialLevel;
+  const level = clampNumber(rawLevel, 0, maxLevel, settings.adaptiveInitialLevel);
+  const levelSettings = getAdaptiveLevel(settings, level);
+
+  if (!settings.adaptiveEnabled) {
+    const legacyNew = Math.max(0, Math.floor(Number(settings.newPerStage) || 0));
+    const legacyReview = Math.max(0, Math.floor(Number(settings.reviewPerStage) || 0));
+    return {
+      enabled: false,
+      migrated: !hasAdaptiveLevel,
+      level,
+      levelName: "الخطة اليدوية",
+      stageSize: Math.max(
+        1,
+        Math.min(20, legacyNew + legacyReview || Number(settings.stageSize) || 5),
+      ),
+      newPerStage: legacyNew,
+      reviewPerStage: legacyReview,
+      sessionStages: Math.max(1, Math.min(50, Number(settings.sessionStages) || 10)),
+      stageIntervalMinutes: Math.max(0, Number(settings.stageIntervalMinutes) || 0),
+      intervalMinutes: Math.max(0, Number(settings.intervalMinutes) || 120),
+      passThreshold: Math.max(0, Math.min(100, Number(settings.passThreshold) || 60)),
+      strongSessions: 0,
+    };
+  }
+
+  const stageSize = Math.max(
+    1,
+    Math.min(
+      20,
+      Math.floor(levelSettings.newPerStage) + Math.floor(levelSettings.reviewPerStage),
+    ),
+  );
+  const rawNew = hasAdaptiveLevel ? enrollment.adaptiveStageNew : levelSettings.newPerStage;
+  const rawReview = hasAdaptiveLevel
+    ? enrollment.adaptiveStageReview
+    : levelSettings.reviewPerStage;
+  let newPerStage = clampNumber(rawNew, 0, stageSize, levelSettings.newPerStage);
+  let reviewPerStage = clampNumber(rawReview, 0, stageSize, levelSettings.reviewPerStage);
+  if (newPerStage + reviewPerStage !== stageSize) {
+    newPerStage = Math.min(newPerStage, stageSize);
+    reviewPerStage = Math.max(0, stageSize - newPerStage);
+  }
+
+  return {
+    enabled: true,
+    migrated: !hasAdaptiveLevel,
+    level,
+    levelName: levelSettings.name,
+    stageSize,
+    newPerStage,
+    reviewPerStage,
+    sessionStages: hasAdaptiveLevel
+      ? clampNumber(enrollment.sessionStages, 1, 50, levelSettings.sessionStages)
+      : Math.max(1, Math.min(50, levelSettings.sessionStages)),
+    stageIntervalMinutes: clampNumber(
+      enrollment.adaptiveStageInterval,
+      0,
+      60,
+      levelSettings.stageIntervalMinutes,
+    ),
+    intervalMinutes: Math.max(30, Number(levelSettings.intervalMinutes) || 300),
+    passThreshold: Math.max(0, Math.min(100, Number(levelSettings.passThreshold) || 60)),
+    strongSessions: Math.max(0, Math.floor(Number(enrollment.adaptiveStrongSessions) || 0)),
+  };
+}
+
 function gradeAnswer(
   question: QuestionPublic,
   privateData: QuestionPrivate,
@@ -313,6 +428,7 @@ async function ensureEnrollment(
   const total = countSnap.data().count;
   const user = await getDoc(doc(firestore, "users", uid));
   const displayName = String(user.data()?.displayName ?? user.data()?.username ?? "طالب");
+  const initialLevel = getAdaptiveLevel(settings, settings.adaptiveInitialLevel);
 
   const data = {
     userId: uid,
@@ -323,12 +439,29 @@ async function ensureEnrollment(
     coverageCount: 0,
     masteryCount: 0,
     autoFirstCorrect: 0,
-    sessionStages: settings.sessionStages,
+    sessionStages: settings.adaptiveEnabled
+      ? initialLevel.sessionStages
+      : settings.sessionStages,
     stagesCompleted: 0,
     stagesInSession: 0,
     sessionNo: 1,
     nextQuestionIndex: 0,
     nextAvailableAt: null,
+    adaptiveLevel: settings.adaptiveInitialLevel,
+    adaptiveStrongSessions: 0,
+    adaptiveStageNew: initialLevel.newPerStage,
+    adaptiveStageReview: initialLevel.reviewPerStage,
+    adaptiveStageInterval: initialLevel.stageIntervalMinutes,
+    adaptiveSessionScoreSum: 0,
+    adaptiveSessionScoreCount: 0,
+    adaptiveSessionMinScore: null,
+    adaptiveSessionReviewCorrect: 0,
+    adaptiveSessionReviewTotal: 0,
+    dailyQuestionDate: "",
+    dailyQuestionCount: 0,
+    adaptiveLevelReason: settings.adaptiveEnabled
+      ? `بدأت من مستوى «${initialLevel.name}»، وستتغير الخطة تلقائيًا حسب أدائك.`
+      : "",
     startedAt: serverTimestamp(),
     completedAt: null,
     masteryCompletedAt: null,
@@ -406,7 +539,10 @@ async function selectQuestions(
     }
   }
 
-  if (selected.length < stageSize) {
+  // If the plan asks for a review-only stage, do not quietly turn the extra
+  // slots into new questions. The emergency fallback below still keeps the app
+  // usable when no review item is due at all.
+  if (selected.length < stageSize && (newCount > 0 || selected.length === 0)) {
     const snap = await getDocs(
       query(
         collection(firestore, "questions"),
@@ -473,7 +609,7 @@ async function buildStagePayload(
     stageNo: Number(attempt.stageNo ?? 0),
     sessionNo: Number(attempt.sessionNo ?? 1),
     stageInSession: Number(attempt.stageInSession ?? 1),
-    sessionStages: settings.sessionStages,
+    sessionStages: Number(attempt.sessionStagesTarget ?? settings.sessionStages),
     questions: items.map((item) => {
       const question = questions.get(item.questionId);
       if (!question) throw appError("QUESTION_NOT_FOUND", "failed-precondition");
@@ -604,6 +740,7 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
     getSettings(subjectId),
     fetchGlobalSettings(),
   ]);
+  const adaptive = adaptivePlanState(enrollment.data, settings);
   const now = Timestamp.now();
 
   const lastSubmitted = await getDocs(
@@ -636,9 +773,9 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
   // It starts when the student confirms they have reviewed the model answers,
   // so it does not punish a student who leaves the results page open.
   const lastFeedbackSeenAt = toMillis(lastSubmittedData?.feedbackSeenAt);
-  if (settings.stageIntervalMinutes > 0 && lastFeedbackSeenAt !== null) {
+  if (adaptive.stageIntervalMinutes > 0 && lastFeedbackSeenAt !== null) {
     const stageAvailableAt =
-      lastFeedbackSeenAt + settings.stageIntervalMinutes * 60 * 1000;
+      lastFeedbackSeenAt + adaptive.stageIntervalMinutes * 60 * 1000;
     if (stageAvailableAt > now.toMillis()) {
       return {
         locked: true,
@@ -699,18 +836,60 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
 
   const stageNo = Number(enrollment.data.stagesCompleted ?? 0) + 1;
   const sessionNo = Number(enrollment.data.sessionNo ?? 1);
-  const stageInSession = Number(enrollment.data.stagesInSession ?? 0) + 1;
+  const migratingToAdaptive = adaptive.enabled && adaptive.migrated;
+  const stageInSession = migratingToAdaptive
+    ? 1
+    : Number(enrollment.data.stagesInSession ?? 0) + 1;
 
-  // A student who did not reach the configured pass mark gets a recovery stage:
-  // more review, fewer new questions. Once they pass, the normal split returns.
+  const dailyQuestionCap = adaptive.enabled
+    ? Math.max(0, Math.floor(Number(settings.adaptiveDailyQuestionCap) || 0))
+    : 0;
+  const todayKey = localDateKey(now.toDate());
+  const dailyQuestionCount =
+    enrollment.data.dailyQuestionDate === todayKey
+      ? Math.max(0, Number(enrollment.data.dailyQuestionCount ?? 0))
+      : 0;
+  if (dailyQuestionCap > 0 && dailyQuestionCount >= dailyQuestionCap) {
+    return {
+      locked: true,
+      dailyCapLocked: true,
+      nextAvailableAt: nextLocalMidnight(now.toDate()),
+      lockMessage: `وصلت إلى سقف اليوم: ${dailyQuestionCap} سؤالًا. سيعود السقف للصفر بعد منتصف الليل، وننصحك بالراحة الآن.`,
+      sessionNo,
+      stagesInSession: Number(enrollment.data.stagesInSession ?? 0),
+    };
+  }
+
+  // The adaptive plan stores the next stage mix after every submitted stage.
+  // The manual mode keeps the older recovery split for compatibility.
   const lastScore = Number(lastSubmittedData?.score);
   const failedLast =
     lastSubmittedData !== null &&
     Number.isFinite(lastScore) &&
-    lastScore < settings.passThreshold;
-  const newCount = failedLast ? settings.failedNewPerStage : settings.newPerStage;
-  const reviewCount = failedLast ? settings.failedReviewPerStage : settings.reviewPerStage;
-  const stageSize = Math.max(1, Math.min(20, newCount + reviewCount));
+    lastScore < adaptive.passThreshold;
+  const plannedNew = adaptive.enabled
+    ? adaptive.newPerStage
+    : failedLast
+      ? settings.failedNewPerStage
+      : settings.newPerStage;
+  const plannedReview = adaptive.enabled
+    ? adaptive.reviewPerStage
+    : failedLast
+      ? settings.failedReviewPerStage
+      : settings.reviewPerStage;
+  let newCount = plannedNew;
+  let reviewCount = plannedReview;
+  let stageSize = Math.max(1, Math.min(20, newCount + reviewCount));
+  if (dailyQuestionCap > 0) {
+    const remainingToday = dailyQuestionCap - dailyQuestionCount;
+    if (remainingToday < stageSize) {
+      stageSize = Math.max(1, remainingToday);
+      newCount = Math.min(newCount, stageSize);
+      reviewCount = Math.max(0, stageSize - newCount);
+    }
+  }
+  const sessionStagesTarget = adaptive.sessionStages;
+  const stageIntervalMinutes = adaptive.stageIntervalMinutes;
 
   const selected = await selectQuestions(
     uid,
@@ -767,6 +946,8 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
         stageNo,
         sessionNo,
         stageInSession,
+        sessionStagesTarget,
+        stageIntervalMinutes,
         status: "in_progress",
         items: selected.map((question, index) => ({
           questionId: question.id,
@@ -778,8 +959,32 @@ async function startStage(subjectId: string): Promise<StartStageResponse> {
         feedbackSeenAt: null,
         answers: [],
         score: null,
+        adaptiveLevel: adaptive.level,
+        adaptiveStageNew: plannedNew,
+        adaptiveStageReview: plannedReview,
       });
-      tx.update(enrollmentRef, { nextQuestionIndex });
+      tx.update(enrollmentRef, {
+        nextQuestionIndex,
+        sessionStages: sessionStagesTarget,
+        ...(adaptive.enabled
+          ? {
+              adaptiveLevel: adaptive.level,
+              adaptiveStageNew: plannedNew,
+              adaptiveStageReview: plannedReview,
+              adaptiveStageInterval: stageIntervalMinutes,
+              adaptiveStrongSessions: adaptive.strongSessions,
+              ...(migratingToAdaptive
+                ? {
+                    adaptiveSessionScoreSum: 0,
+                    adaptiveSessionScoreCount: 0,
+                    adaptiveSessionMinScore: null,
+                    adaptiveSessionReviewCorrect: 0,
+                    adaptiveSessionReviewTotal: 0,
+                  }
+                : {}),
+            }
+          : {}),
+      });
     });
   } catch (error) {
     if ((error as { code?: string }).code === "aborted") {
@@ -902,10 +1107,35 @@ async function submitStage(
   ];
   const unitTotals = await getUnitTotals(subjectId, unitIds);
   const now = Timestamp.now();
-  const sessionComplete = Number(attempt.stageInSession ?? 0) >= settings.sessionStages;
-  const nextAvailableAt = sessionComplete
-    ? Timestamp.fromMillis(now.toMillis() + settings.intervalMinutes * 60 * 1000)
+  const stageIntervalMinutes = Math.max(
+    0,
+    Number(attempt.stageIntervalMinutes ?? settings.stageIntervalMinutes) || 0,
+  );
+  const autoGraded = graded.filter(
+    (answer) => answer.grading === "auto" && answer.isCorrect !== null,
+  );
+  const stageAutoScore = autoGraded.length
+    ? Math.round(
+        (autoGraded.filter((answer) => answer.isCorrect === true).length /
+          autoGraded.length) *
+          100,
+      )
     : null;
+  const reviewAuto = items
+    .map((item, index) => ({ item, answer: graded[index] }))
+    .filter(
+      ({ item, answer }) =>
+        item.isReview && answer.grading === "auto" && answer.isCorrect !== null,
+    );
+  const reviewCorrectDelta = reviewAuto.filter(
+    ({ answer }) => answer.isCorrect === true,
+  ).length;
+  const reviewTotalDelta = reviewAuto.length;
+  const legacyScore = Math.round(
+    (graded.filter((answer) => answer.isCorrect === true).length /
+      Math.max(1, graded.length)) *
+      100,
+  );
 
   const enrollmentRef = doc(firestore, "enrollments", enrollmentId(uid, subjectId));
   const progressRefs = items.map((item) => doc(firestore, "progress", `${uid}_${item.questionId}`));
@@ -917,6 +1147,14 @@ async function submitStage(
   let masteryCount = 0;
   let totalQuestions = 0;
   let masteryTargetValue = 0;
+  let sessionComplete = false;
+  let nextAvailableAt: Timestamp | null = null;
+  let adaptiveLevelAfter = Number(attempt.adaptiveLevel ?? settings.adaptiveInitialLevel);
+  let adaptiveLevelNameValue = getAdaptiveLevel(settings, adaptiveLevelAfter).name;
+  let adaptiveLevelChanged: "up" | "down" | null = null;
+  let nextStageNewValue = Number(attempt.adaptiveStageNew ?? 0);
+  let nextStageReviewValue = Number(attempt.adaptiveStageReview ?? 0);
+  let nextStageIntervalValue = stageIntervalMinutes;
 
   await runTransaction(firestore, async (tx) => {
     const currentAttempt = await tx.get(attemptRef);
@@ -932,6 +1170,183 @@ async function submitStage(
     const enrollmentSnap = await tx.get(enrollmentRef);
     if (!enrollmentSnap.exists()) throw appError("ENROLLMENT_NOT_FOUND", "not-found");
     const enrollment = enrollmentSnap.data();
+    const adaptive = adaptivePlanState(enrollment, settings);
+    const todayKey = localDateKey(now.toDate());
+    const currentDailyQuestionCount =
+      enrollment.dailyQuestionDate === todayKey
+        ? Math.max(0, Number(enrollment.dailyQuestionCount ?? 0))
+        : 0;
+    const nextDailyQuestionCount = currentDailyQuestionCount + items.length;
+    const sessionStagesTarget = Number(
+      currentAttemptData.sessionStagesTarget ??
+        enrollment.sessionStages ??
+        adaptive.sessionStages,
+    );
+    sessionComplete =
+      Number(currentAttemptData.stageInSession ?? 1) >= Math.max(1, sessionStagesTarget);
+
+    let nextAdaptiveLevel = adaptive.level;
+    let nextAdaptiveLevelName = adaptive.levelName;
+    let nextAdaptiveStrong = adaptive.strongSessions;
+    let nextAdaptiveNew = adaptive.newPerStage;
+    let nextAdaptiveReview = adaptive.reviewPerStage;
+    let nextAdaptiveStageInterval = adaptive.stageIntervalMinutes;
+    let nextAdaptiveSessionStages = adaptive.sessionStages;
+    let nextAdaptiveSessionInterval = adaptive.intervalMinutes;
+    let nextAdaptiveReason = String(enrollment.adaptiveLevelReason ?? "");
+    let nextSessionScoreSum = Number(enrollment.adaptiveSessionScoreSum ?? 0);
+    let nextSessionScoreCount = Number(enrollment.adaptiveSessionScoreCount ?? 0);
+    let nextSessionMinScore =
+      enrollment.adaptiveSessionMinScore === null ||
+      enrollment.adaptiveSessionMinScore === undefined
+        ? null
+        : Number(enrollment.adaptiveSessionMinScore);
+    let nextSessionReviewCorrect = Number(
+      enrollment.adaptiveSessionReviewCorrect ?? 0,
+    );
+    let nextSessionReviewTotal = Number(enrollment.adaptiveSessionReviewTotal ?? 0);
+    let levelChange: "up" | "down" | null = null;
+
+    if (adaptive.enabled) {
+      const scoreSum = nextSessionScoreSum + (stageAutoScore ?? 0);
+      const scoreCount = nextSessionScoreCount + (stageAutoScore === null ? 0 : 1);
+      const minScore =
+        stageAutoScore === null
+          ? nextSessionMinScore
+          : nextSessionMinScore === null
+            ? stageAutoScore
+            : Math.min(nextSessionMinScore, stageAutoScore);
+      const reviewCorrect = nextSessionReviewCorrect + reviewCorrectDelta;
+      const reviewTotal = nextSessionReviewTotal + reviewTotalDelta;
+
+      if (sessionComplete) {
+        const sessionScore =
+          scoreCount > 0 ? Math.round(scoreSum / scoreCount) : null;
+        const reviewAccuracy =
+          reviewTotal > 0 ? Math.round((reviewCorrect / reviewTotal) * 100) : 100;
+        const strong =
+          sessionScore !== null &&
+          sessionScore >= settings.adaptiveUpThreshold &&
+          (minScore === null || minScore >= settings.adaptiveMinStageScore) &&
+          reviewAccuracy >= settings.adaptiveMinReviewAccuracy;
+        const weak =
+          sessionScore !== null &&
+          (sessionScore < settings.adaptiveDownThreshold ||
+            (minScore !== null && minScore < settings.adaptiveCriticalStageScore));
+
+        if (strong) {
+          const streak = adaptive.strongSessions + 1;
+          if (streak >= settings.adaptiveStrongSessions) {
+            const maxLevel = Math.max(0, settings.adaptiveLevels.length - 1);
+            nextAdaptiveLevel = Math.min(maxLevel, adaptive.level + 1);
+            if (nextAdaptiveLevel > adaptive.level) {
+              levelChange = "up";
+              nextAdaptiveLevelName = getAdaptiveLevel(settings, nextAdaptiveLevel).name;
+              nextAdaptiveReason = `ترقيت إلى مستوى «${nextAdaptiveLevelName}» بعد أداء مرتفع في ${settings.adaptiveStrongSessions} جلسات متتالية.`;
+            } else {
+              nextAdaptiveLevelName = adaptive.levelName;
+              nextAdaptiveReason =
+                "أنت في أعلى مستوى في الخطة، واصل المحافظة على الإتقان.";
+            }
+            nextAdaptiveStrong = 0;
+          } else {
+            nextAdaptiveStrong = streak;
+            nextAdaptiveLevelName = adaptive.levelName;
+            nextAdaptiveReason = `أداء مرتفع. تحتاج ${settings.adaptiveStrongSessions - streak} جلسة أخرى للترقي.`;
+          }
+        } else if (weak) {
+          nextAdaptiveLevel = Math.max(0, adaptive.level - 1);
+          if (nextAdaptiveLevel < adaptive.level) {
+            levelChange = "down";
+            nextAdaptiveLevelName = getAdaptiveLevel(settings, nextAdaptiveLevel).name;
+            nextAdaptiveReason = `عدنا بك إلى مستوى «${nextAdaptiveLevelName}» بعد تعثر الجلسة الأخيرة.`;
+          } else {
+            nextAdaptiveLevelName = adaptive.levelName;
+            nextAdaptiveReason =
+              "أنت في مستوى التأسيس، وسنزيد المراجعة في الجلسة القادمة.";
+          }
+          nextAdaptiveStrong = 0;
+        } else {
+          nextAdaptiveStrong = 0;
+          nextAdaptiveLevelName = adaptive.levelName;
+          nextAdaptiveReason =
+            "حافظت على مستواك. ستواصل الخطة بنفس الإيقاع.";
+        }
+
+        const nextLevelSettings = getAdaptiveLevel(settings, nextAdaptiveLevel);
+        nextAdaptiveNew = nextLevelSettings.newPerStage;
+        nextAdaptiveReview = nextLevelSettings.reviewPerStage;
+        nextAdaptiveStageInterval = nextLevelSettings.stageIntervalMinutes;
+        nextAdaptiveSessionStages = nextLevelSettings.sessionStages;
+        nextAdaptiveSessionInterval = nextLevelSettings.intervalMinutes;
+        nextAvailableAt = Timestamp.fromMillis(
+          now.toMillis() + nextAdaptiveSessionInterval * 60 * 1000,
+        );
+        nextSessionScoreSum = 0;
+        nextSessionScoreCount = 0;
+        nextSessionMinScore = null;
+        nextSessionReviewCorrect = 0;
+        nextSessionReviewTotal = 0;
+      } else {
+        nextSessionScoreSum = scoreSum;
+        nextSessionScoreCount = scoreCount;
+        nextSessionMinScore = minScore;
+        nextSessionReviewCorrect = reviewCorrect;
+        nextSessionReviewTotal = reviewTotal;
+        nextAdaptiveNew = adaptive.newPerStage;
+        nextAdaptiveReview = adaptive.reviewPerStage;
+        nextAdaptiveStageInterval = adaptive.stageIntervalMinutes;
+
+        if (stageAutoScore !== null) {
+          const maxNew = Math.max(0, adaptive.stageSize - 1);
+          if (stageAutoScore >= 90) {
+            nextAdaptiveNew = Math.min(maxNew, nextAdaptiveNew + 1);
+            nextAdaptiveStageInterval = Math.max(
+              0,
+              nextAdaptiveStageInterval - 1,
+            );
+          } else if (stageAutoScore >= 75) {
+            // 75–89%: hold the mix and the pause as they are.
+          } else if (stageAutoScore >= 60) {
+            nextAdaptiveNew = Math.max(0, nextAdaptiveNew - 1);
+            nextAdaptiveStageInterval = Math.min(
+              60,
+              nextAdaptiveStageInterval + 1,
+            );
+          } else {
+            nextAdaptiveNew = Math.max(0, nextAdaptiveNew - 1);
+            nextAdaptiveStageInterval = Math.min(
+              60,
+              nextAdaptiveStageInterval + 2,
+            );
+          }
+          nextAdaptiveReview = Math.max(0, adaptive.stageSize - nextAdaptiveNew);
+        }
+      }
+    } else {
+      if (sessionComplete) {
+        nextAvailableAt = Timestamp.fromMillis(
+          now.toMillis() + settings.intervalMinutes * 60 * 1000,
+        );
+      }
+      const legacyFailed = legacyScore < settings.passThreshold;
+      nextAdaptiveNew = legacyFailed
+        ? settings.failedNewPerStage
+        : settings.newPerStage;
+      nextAdaptiveReview = legacyFailed
+        ? settings.failedReviewPerStage
+        : settings.reviewPerStage;
+    }
+
+    const adaptiveLevelForWrite = adaptive.enabled ? nextAdaptiveLevel : adaptive.level;
+    adaptiveLevelAfter = adaptiveLevelForWrite;
+    adaptiveLevelNameValue = adaptive.enabled
+      ? nextAdaptiveLevelName
+      : adaptive.levelName;
+    adaptiveLevelChanged = levelChange;
+    nextStageNewValue = nextAdaptiveNew;
+    nextStageReviewValue = nextAdaptiveReview;
+    nextStageIntervalValue = nextAdaptiveStageInterval;
 
     const progressSnaps = await Promise.all(progressRefs.map((ref) => tx.get(ref)));
     const unitProgressSnaps = await Promise.all(unitProgressRefs.map((ref) => tx.get(ref)));
@@ -1051,7 +1466,9 @@ async function submitStage(
       coverageCount,
       masteryCount,
       masteryTarget: masteryTargetValue,
-      sessionStages: settings.sessionStages,
+      sessionStages: nextAdaptiveSessionStages,
+      dailyQuestionDate: todayKey,
+      dailyQuestionCount: nextDailyQuestionCount,
       autoFirstCorrect,
       stagesCompleted: Number(enrollment.stagesCompleted ?? 0) + 1,
       stagesInSession: sessionComplete ? 0 : Number(currentAttemptData.stageInSession ?? 1),
@@ -1060,7 +1477,22 @@ async function submitStage(
         : Number(enrollment.sessionNo ?? 1),
       completedAt,
       masteryCompletedAt,
-      ...(sessionComplete ? { nextAvailableAt } : {}),
+      ...(adaptive.enabled
+        ? {
+            adaptiveLevel: adaptiveLevelForWrite,
+            adaptiveStrongSessions: nextAdaptiveStrong,
+            adaptiveStageNew: nextAdaptiveNew,
+            adaptiveStageReview: nextAdaptiveReview,
+            adaptiveStageInterval: nextAdaptiveStageInterval,
+            adaptiveSessionScoreSum: nextSessionScoreSum,
+            adaptiveSessionScoreCount: nextSessionScoreCount,
+            adaptiveSessionMinScore: nextSessionMinScore,
+            adaptiveSessionReviewCorrect: nextSessionReviewCorrect,
+            adaptiveSessionReviewTotal: nextSessionReviewTotal,
+            adaptiveLevelReason: nextAdaptiveReason,
+          }
+        : {}),
+      ...(sessionComplete && nextAvailableAt ? { nextAvailableAt } : {}),
     });
 
     const correctCount = graded.filter((answer) => answer.isCorrect === true).length;
@@ -1081,6 +1513,11 @@ async function submitStage(
         type: answer.type,
         options: answer.options ?? null,
       })),
+      adaptiveLevelAfter: adaptiveLevelForWrite,
+      adaptiveLevelChange: levelChange,
+      nextStageNew: nextAdaptiveNew,
+      nextStageReview: nextAdaptiveReview,
+      nextStageIntervalMinutes: nextAdaptiveStageInterval,
     });
   });
 
@@ -1090,12 +1527,18 @@ async function submitStage(
     score: Math.round((correctCount / Math.max(1, graded.length)) * 100),
     results: graded,
     sessionComplete,
-    nextAvailableAt: nextAvailableAt ? nextAvailableAt.toMillis() : null,
-    stageIntervalMinutes: settings.stageIntervalMinutes,
+    nextAvailableAt: toMillis(nextAvailableAt),
+    stageIntervalMinutes,
     totalQuestions,
     coverageCount,
     masteryCount,
     masteryTarget: masteryTargetValue,
+    adaptiveLevel: adaptiveLevelAfter,
+    adaptiveLevelName: adaptiveLevelNameValue,
+    adaptiveLevelChanged,
+    nextStageNew: nextStageNewValue,
+    nextStageReview: nextStageReviewValue,
+    nextStageIntervalMinutes: nextStageIntervalValue,
   };
 }
 
@@ -1284,15 +1727,35 @@ async function getStageResult(attemptId: string): Promise<StageResultResponse> {
     doc(firestore, "enrollments", enrollmentId(uid, subjectId)),
   );
   const enrollment = enrollmentSnap.exists() ? enrollmentSnap.data() : {};
+  const adaptive = adaptivePlanState(enrollment, settings);
+  const sessionStagesTarget = Number(
+    attempt.sessionStagesTarget ?? enrollment.sessionStages ?? adaptive.sessionStages,
+  );
+  const level = Number(
+    attempt.adaptiveLevelAfter ?? enrollment.adaptiveLevel ?? adaptive.level,
+  );
+  const levelSettings = getAdaptiveLevel(settings, level);
 
   return {
     attemptId,
     score: Number(attempt.score ?? 0),
     results: (attempt.answers ?? []) as GradedAnswer[],
-    sessionComplete: Number(attempt.stageInSession ?? 0) >= settings.sessionStages,
+    sessionComplete:
+      Number(attempt.stageInSession ?? 0) >= Math.max(1, sessionStagesTarget),
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
-    stageIntervalMinutes: settings.stageIntervalMinutes,
+    stageIntervalMinutes: Number(
+      attempt.stageIntervalMinutes ?? adaptive.stageIntervalMinutes,
+    ),
     feedbackSeen: Boolean(attempt.feedbackSeenAt),
+    adaptiveLevel: level,
+    adaptiveLevelName: adaptive.enabled ? levelSettings.name : adaptive.levelName,
+    adaptiveLevelChanged:
+      (attempt.adaptiveLevelChange as "up" | "down" | null | undefined) ?? null,
+    nextStageNew: Number(attempt.nextStageNew ?? adaptive.newPerStage),
+    nextStageReview: Number(attempt.nextStageReview ?? adaptive.reviewPerStage),
+    nextStageIntervalMinutes: Number(
+      attempt.nextStageIntervalMinutes ?? adaptive.stageIntervalMinutes,
+    ),
   };
 }
 
@@ -1334,6 +1797,15 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
     getSettings(subjectId),
     fetchGlobalSettings(),
   ]);
+  const adaptive = adaptivePlanState(enrollment, settings);
+  const todayKey = localDateKey(new Date());
+  const dailyQuestionCap = adaptive.enabled
+    ? Math.max(0, Math.floor(Number(settings.adaptiveDailyQuestionCap) || 0))
+    : 0;
+  const dailyQuestionCount =
+    enrollment.dailyQuestionDate === todayKey
+      ? Math.max(0, Number(enrollment.dailyQuestionCount ?? 0))
+      : 0;
 
   const [unitsSnap, progressSnap] = await Promise.all([
     getDocs(
@@ -1357,7 +1829,7 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
   );
 
   let stageAvailableAt: number | null = null;
-  if (settings.stageIntervalMinutes > 0) {
+  if (adaptive.stageIntervalMinutes > 0) {
     const lastSubmitted = await getDocs(
       query(
         collection(firestore, "stage_attempts"),
@@ -1372,7 +1844,8 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
       ? null
       : toMillis(lastSubmitted.docs[0].data().feedbackSeenAt);
     if (feedbackSeenAt !== null) {
-      stageAvailableAt = feedbackSeenAt + settings.stageIntervalMinutes * 60 * 1000;
+      stageAvailableAt =
+        feedbackSeenAt + adaptive.stageIntervalMinutes * 60 * 1000;
     }
   }
 
@@ -1383,7 +1856,7 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
     coverageCount: Number(enrollment.coverageCount ?? 0),
     masteryCount: Number(enrollment.masteryCount ?? 0),
     masteryTarget: masteryTarget(enrollment, settings),
-    sessionStages: settings.sessionStages,
+    sessionStages: adaptive.sessionStages,
     sessionNo: Number(enrollment.sessionNo ?? 1),
     stagesInSession: Number(enrollment.stagesInSession ?? 0),
     nextAvailableAt: toMillis(enrollment.nextAvailableAt),
@@ -1395,6 +1868,17 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
       globalSettings.lockMessage ||
       settings.lockMessage ||
       "أوقفت الإدارة فتح مراحل جديدة حاليًا.",
+    adaptiveEnabled: adaptive.enabled,
+    adaptiveLevel: adaptive.level,
+    adaptiveLevelName: adaptive.levelName,
+    adaptiveLevelNames: settings.adaptiveLevels.map((level) => level.name),
+    adaptiveLevelReason: String(enrollment.adaptiveLevelReason ?? ""),
+    nextStageNew: adaptive.newPerStage,
+    nextStageReview: adaptive.reviewPerStage,
+    stageIntervalMinutes: adaptive.stageIntervalMinutes,
+    sessionIntervalMinutes: adaptive.intervalMinutes,
+    dailyQuestionCap,
+    dailyQuestionCount,
     byUnit: unitsSnap.docs.map((unitDoc) => {
       const unit = unitDoc.data();
       const progress = progressByUnit.get(unitDoc.id);
@@ -1411,23 +1895,22 @@ async function getSubjectProgress(subjectId: string): Promise<SubjectProgress> {
 
 async function getLeaderboard(subjectId: string) {
   const firestore = database();
+  // Rank by mastery ratio, not by raw question volume. We fetch a generous
+  // candidate set and sort in the browser so existing enrollments that do not
+  // have a derived percentage field still appear correctly.
   const snap = await getDocs(
     query(
       collection(firestore, "enrollments"),
       where("subjectId", "==", subjectId),
-      orderBy("autoFirstCorrect", "desc"),
-      orderBy("masteryCount", "desc"),
-      orderBy("coverageCount", "desc"),
-      limit(50),
+      limit(500),
     ),
   );
 
-  return {
-    subjectId,
-    rows: snap.docs.map((enrollment, index): LeaderboardRow => {
+  const rows = snap.docs
+    .map((enrollment): LeaderboardRow => {
       const data = enrollment.data();
       return {
-        rank: index + 1,
+        rank: 0,
         userId: String(data.userId ?? enrollment.id),
         displayName: String(data.displayName ?? "طالب"),
         autoFirstCorrect: Number(data.autoFirstCorrect ?? 0),
@@ -1436,8 +1919,25 @@ async function getLeaderboard(subjectId: string) {
         totalQuestions: Number(data.totalQuestions ?? 0),
         completedAt: toMillis(data.completedAt),
       };
-    }),
-  };
+    })
+    .sort((left, right) => {
+      const leftRatio =
+        left.totalQuestions > 0 ? left.masteryCount / left.totalQuestions : 0;
+      const rightRatio =
+        right.totalQuestions > 0 ? right.masteryCount / right.totalQuestions : 0;
+      if (rightRatio !== leftRatio) return rightRatio - leftRatio;
+      if (right.autoFirstCorrect !== left.autoFirstCorrect) {
+        return right.autoFirstCorrect - left.autoFirstCorrect;
+      }
+      if (right.coverageCount !== left.coverageCount) {
+        return right.coverageCount - left.coverageCount;
+      }
+      return left.displayName.localeCompare(right.displayName, "ar");
+    })
+    .slice(0, 50)
+    .map((row, index) => ({ ...row, rank: index + 1 }));
+
+  return { subjectId, rows };
 }
 
 function certificateCode(): string {

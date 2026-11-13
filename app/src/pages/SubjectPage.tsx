@@ -22,6 +22,7 @@ import { db } from "../lib/firebase";
 import { errorMessage } from "../lib/errors";
 import {
   branchLabel,
+  formatDurationMinutes,
   formatNumber,
   formatPercent,
   progressRatio,
@@ -230,7 +231,11 @@ export function SubjectPage() {
               <strong>الجلسة التالية بعد</strong>
               <Countdown target={nextAvailableAt} />
             </div>
-            <span className="muted small">فاصل الجلسة الذي حددته الإدارة.</span>
+            <span className="muted small">
+              {progress?.adaptiveEnabled
+                ? "فاصل الجلسة محسوب من خطتك التكيفية."
+                : "فاصل الجلسة الذي حددته الإدارة."}
+            </span>
           </div>
         ) : stageLocked ? (
           <div className="locked-action">
@@ -239,7 +244,11 @@ export function SubjectPage() {
               <strong>المرحلة التالية بعد</strong>
               <Countdown target={stageAvailableAt} />
             </div>
-            <span className="muted small">فاصل بين المراحل حددته الإدارة.</span>
+            <span className="muted small">
+              {progress?.adaptiveEnabled
+                ? "فاصل المراحل محسوب من خطتك التكيفية."
+                : "فاصل بين المراحل حددته الإدارة."}
+            </span>
           </div>
         ) : (
           <button className="button button--primary button--lg" type="button" onClick={() => navigate(`/stage/${subject.id}`)}>
@@ -286,6 +295,82 @@ export function SubjectPage() {
           </small>
         </div>
       </div>
+
+      {progress?.adaptiveEnabled ? (
+        <section className="adaptive-plan-card">
+          <div className="adaptive-plan-card__head">
+            <div>
+              <span className="eyebrow">
+                <SparklesIcon />
+                خطة الإتقان المتدرج
+              </span>
+              <h2>{progress.adaptiveLevelName}</h2>
+              <p>
+                عدد الأسئلة والفواصل يتغيران تلقائيًا حسب أدائك في المراحل
+                والجلسات.
+              </p>
+            </div>
+            <span className="badge badge--soft">
+              المستوى {formatNumber(progress.adaptiveLevel + 1)} من{" "}
+              {formatNumber(progress.adaptiveLevelNames.length)}
+            </span>
+          </div>
+
+          <div className="adaptive-level-track">
+            {progress.adaptiveLevelNames.map((name, index) => (
+              <div
+                className={`adaptive-level-step${
+                  index === progress.adaptiveLevel
+                    ? " is-current"
+                    : index < progress.adaptiveLevel
+                      ? " is-done"
+                      : ""
+                }`}
+                key={`${name}-${index}`}
+                aria-current={index === progress.adaptiveLevel ? "step" : undefined}
+              >
+                <span>{formatNumber(index + 1)}</span>
+                <strong>{name}</strong>
+              </div>
+            ))}
+          </div>
+
+          <div className="adaptive-plan-grid">
+            <div>
+              <span>المرحلة القادمة</span>
+              <strong>
+                {formatNumber(progress.nextStageNew)} جديد +{" "}
+                {formatNumber(progress.nextStageReview)} مراجعة
+              </strong>
+            </div>
+            <div>
+              <span>مراحل الجلسة</span>
+              <strong>{formatNumber(progress.sessionStages)} مراحل</strong>
+            </div>
+            <div>
+              <span>فاصل المراحل</span>
+              <strong>{formatDurationMinutes(progress.stageIntervalMinutes)}</strong>
+            </div>
+            <div>
+              <span>فاصل الجلسات</span>
+              <strong>{formatDurationMinutes(progress.sessionIntervalMinutes)}</strong>
+            </div>
+            {progress.dailyQuestionCap > 0 ? (
+              <div>
+                <span>سقف اليوم</span>
+                <strong>
+                  {formatNumber(progress.dailyQuestionCount)} /{" "}
+                  {formatNumber(progress.dailyQuestionCap)} سؤال
+                </strong>
+              </div>
+            ) : null}
+          </div>
+
+          {progress.adaptiveLevelReason ? (
+            <p className="adaptive-plan-reason">{progress.adaptiveLevelReason}</p>
+          ) : null}
+        </section>
+      ) : null}
 
       <section className="section">
         <div className="section-heading">

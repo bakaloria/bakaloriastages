@@ -1,6 +1,54 @@
 import { doc, getDoc, serverTimestamp, setDoc } from "firebase/firestore";
 import { db } from "./firebase";
-import type { GlobalSettings, SubjectSettings } from "./types";
+import type { AdaptiveLevel, GlobalSettings, SubjectSettings } from "./types";
+
+export const DEFAULT_ADAPTIVE_LEVELS: AdaptiveLevel[] = [
+  {
+    name: "تأسيس",
+    newPerStage: 1,
+    reviewPerStage: 3,
+    sessionStages: 4,
+    stageIntervalMinutes: 6,
+    intervalMinutes: 24 * 60,
+    passThreshold: 60,
+  },
+  {
+    name: "تعافٍ",
+    newPerStage: 2,
+    reviewPerStage: 2,
+    sessionStages: 5,
+    stageIntervalMinutes: 5,
+    intervalMinutes: 12 * 60,
+    passThreshold: 60,
+  },
+  {
+    name: "متوازن",
+    newPerStage: 3,
+    reviewPerStage: 2,
+    sessionStages: 6,
+    stageIntervalMinutes: 3,
+    intervalMinutes: 5 * 60,
+    passThreshold: 70,
+  },
+  {
+    name: "متقدم",
+    newPerStage: 4,
+    reviewPerStage: 2,
+    sessionStages: 7,
+    stageIntervalMinutes: 2,
+    intervalMinutes: 210,
+    passThreshold: 70,
+  },
+  {
+    name: "إتقان",
+    newPerStage: 5,
+    reviewPerStage: 2,
+    sessionStages: 8,
+    stageIntervalMinutes: 1,
+    intervalMinutes: 150,
+    passThreshold: 75,
+  },
+];
 
 export const DEFAULT_SUBJECT_SETTINGS: SubjectSettings = {
   // Five questions per stage remains the recommended default, but the split is
@@ -21,6 +69,16 @@ export const DEFAULT_SUBJECT_SETTINGS: SubjectSettings = {
   finalExamRequired: false,
   stagesLocked: false,
   lockMessage: "",
+  adaptiveEnabled: true,
+  adaptiveInitialLevel: 2,
+  adaptiveUpThreshold: 85,
+  adaptiveDownThreshold: 60,
+  adaptiveStrongSessions: 2,
+  adaptiveMinStageScore: 60,
+  adaptiveCriticalStageScore: 40,
+  adaptiveMinReviewAccuracy: 70,
+  adaptiveDailyQuestionCap: 80,
+  adaptiveLevels: DEFAULT_ADAPTIVE_LEVELS,
 };
 
 export const DEFAULT_BACKGROUND_COLOR = "#f7f3ea";
@@ -322,6 +380,50 @@ function clamp(value: unknown, min: number, max: number, fallback: number): numb
   return Math.max(min, Math.min(max, parsed));
 }
 
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function normalizeAdaptiveLevels(value: unknown): AdaptiveLevel[] {
+  const source = Array.isArray(value) ? value : DEFAULT_ADAPTIVE_LEVELS;
+  return DEFAULT_ADAPTIVE_LEVELS.map((fallback, index) => {
+    const raw = asRecord(source[index]);
+    const newPerStage = clamp(raw.newPerStage, 0, 8, fallback.newPerStage);
+    const reviewPerStage = clamp(raw.reviewPerStage, 0, 8, fallback.reviewPerStage);
+    const bothEmpty = newPerStage + reviewPerStage === 0;
+    return {
+      name: String(raw.name ?? fallback.name).trim() || fallback.name,
+      newPerStage,
+      reviewPerStage: bothEmpty ? fallback.reviewPerStage : reviewPerStage,
+      sessionStages: clamp(raw.sessionStages, 3, 12, fallback.sessionStages),
+      stageIntervalMinutes: clamp(
+        raw.stageIntervalMinutes,
+        0,
+        60,
+        fallback.stageIntervalMinutes,
+      ),
+      intervalMinutes: clamp(
+        raw.intervalMinutes,
+        30,
+        7 * 24 * 60,
+        fallback.intervalMinutes,
+      ),
+      passThreshold: clamp(raw.passThreshold, 0, 100, fallback.passThreshold),
+    };
+  });
+}
+
+export function getAdaptiveLevel(settings: SubjectSettings, level: number): AdaptiveLevel {
+  const levels =
+    Array.isArray(settings.adaptiveLevels) && settings.adaptiveLevels.length > 0
+      ? settings.adaptiveLevels
+      : DEFAULT_ADAPTIVE_LEVELS;
+  const index = Math.max(0, Math.min(levels.length - 1, Math.floor(Number(level) || 0)));
+  return levels[index] ?? DEFAULT_ADAPTIVE_LEVELS[0];
+}
+
 export function normalizeSubjectSettings(data: Partial<SubjectSettings> | null): SubjectSettings {
   const merged = { ...DEFAULT_SUBJECT_SETTINGS, ...(data ?? {}) };
   const newPerStage = clamp(merged.newPerStage, 0, 10, DEFAULT_SUBJECT_SETTINGS.newPerStage);
@@ -331,6 +433,7 @@ export function normalizeSubjectSettings(data: Partial<SubjectSettings> | null):
     10,
     DEFAULT_SUBJECT_SETTINGS.reviewPerStage,
   );
+  const adaptiveLevels = normalizeAdaptiveLevels(merged.adaptiveLevels);
   return {
     stageSize: Math.max(
       1,
@@ -389,6 +492,56 @@ export function normalizeSubjectSettings(data: Partial<SubjectSettings> | null):
     finalExamRequired: Boolean(merged.finalExamRequired),
     stagesLocked: Boolean(merged.stagesLocked),
     lockMessage: String(merged.lockMessage ?? "").trim(),
+    adaptiveEnabled: merged.adaptiveEnabled !== false,
+    adaptiveInitialLevel: clamp(
+      merged.adaptiveInitialLevel,
+      0,
+      adaptiveLevels.length - 1,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveInitialLevel,
+    ),
+    adaptiveUpThreshold: clamp(
+      merged.adaptiveUpThreshold,
+      0,
+      100,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveUpThreshold,
+    ),
+    adaptiveDownThreshold: clamp(
+      merged.adaptiveDownThreshold,
+      0,
+      100,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveDownThreshold,
+    ),
+    adaptiveStrongSessions: clamp(
+      merged.adaptiveStrongSessions,
+      1,
+      3,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveStrongSessions,
+    ),
+    adaptiveMinStageScore: clamp(
+      merged.adaptiveMinStageScore,
+      0,
+      100,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveMinStageScore,
+    ),
+    adaptiveCriticalStageScore: clamp(
+      merged.adaptiveCriticalStageScore,
+      0,
+      100,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveCriticalStageScore,
+    ),
+    adaptiveMinReviewAccuracy: clamp(
+      merged.adaptiveMinReviewAccuracy,
+      0,
+      100,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveMinReviewAccuracy,
+    ),
+    adaptiveDailyQuestionCap: clamp(
+      merged.adaptiveDailyQuestionCap,
+      0,
+      500,
+      DEFAULT_SUBJECT_SETTINGS.adaptiveDailyQuestionCap,
+    ),
+    adaptiveLevels,
   };
 }
 

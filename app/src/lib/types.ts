@@ -61,6 +61,17 @@ export interface SubjectProgress {
   masteryCompletedAt: number | null;
   stagesLocked: boolean;
   lockMessage: string;
+  adaptiveEnabled: boolean;
+  adaptiveLevel: number;
+  adaptiveLevelName: string;
+  adaptiveLevelNames: string[];
+  adaptiveLevelReason: string;
+  nextStageNew: number;
+  nextStageReview: number;
+  stageIntervalMinutes: number;
+  sessionIntervalMinutes: number;
+  dailyQuestionCap: number;
+  dailyQuestionCount: number;
   byUnit: UnitProgress[];
 }
 
@@ -90,6 +101,7 @@ export interface StageLocked {
   stagesInSession?: number;
   adminLocked?: boolean;
   stageLocked?: boolean;
+  dailyCapLocked?: boolean;
   lockMessage?: string;
 }
 
@@ -144,6 +156,12 @@ export interface SubmitStageResponse {
   coverageCount: number;
   masteryCount: number;
   masteryTarget: number;
+  adaptiveLevel?: number;
+  adaptiveLevelName?: string;
+  adaptiveLevelChanged?: "up" | "down" | null;
+  nextStageNew?: number;
+  nextStageReview?: number;
+  nextStageIntervalMinutes?: number;
 }
 
 export interface StageResultResponse {
@@ -154,6 +172,12 @@ export interface StageResultResponse {
   nextAvailableAt: number | null;
   stageIntervalMinutes: number;
   feedbackSeen: boolean;
+  adaptiveLevel?: number;
+  adaptiveLevelName?: string;
+  adaptiveLevelChanged?: "up" | "down" | null;
+  nextStageNew?: number;
+  nextStageReview?: number;
+  nextStageIntervalMinutes?: number;
 }
 
 export interface LeaderboardRow {
@@ -185,6 +209,16 @@ export interface RegisterInput {
   branch: Branch;
 }
 
+export interface AdaptiveLevel {
+  name: string;
+  newPerStage: number;
+  reviewPerStage: number;
+  sessionStages: number;
+  stageIntervalMinutes: number;
+  intervalMinutes: number;
+  passThreshold: number;
+}
+
 export interface SubjectSettings {
   stageSize: number;
   newPerStage: number;
@@ -200,6 +234,16 @@ export interface SubjectSettings {
   finalExamRequired: boolean;
   stagesLocked: boolean;
   lockMessage: string;
+  adaptiveEnabled: boolean;
+  adaptiveInitialLevel: number;
+  adaptiveUpThreshold: number;
+  adaptiveDownThreshold: number;
+  adaptiveStrongSessions: number;
+  adaptiveMinStageScore: number;
+  adaptiveCriticalStageScore: number;
+  adaptiveMinReviewAccuracy: number;
+  adaptiveDailyQuestionCap: number;
+  adaptiveLevels: AdaptiveLevel[];
 }
 
 export interface GlobalSettings {

@@ -293,24 +293,95 @@ await admin.firestore().doc("users/<UID>").set(
   "masteryThreshold": 1,
   "finalExamRequired": false,
   "stagesLocked": false,
-  "lockMessage": ""
+  "lockMessage": "",
+  "adaptiveEnabled": true,
+  "adaptiveInitialLevel": 2,
+  "adaptiveUpThreshold": 85,
+  "adaptiveDownThreshold": 60,
+  "adaptiveStrongSessions": 2,
+  "adaptiveMinStageScore": 60,
+  "adaptiveCriticalStageScore": 40,
+  "adaptiveMinReviewAccuracy": 70,
+  "adaptiveDailyQuestionCap": 80,
+  "adaptiveLevels": [
+    {
+      "name": "تأسيس",
+      "newPerStage": 1,
+      "reviewPerStage": 3,
+      "sessionStages": 4,
+      "stageIntervalMinutes": 6,
+      "intervalMinutes": 1440,
+      "passThreshold": 60
+    },
+    {
+      "name": "تعافٍ",
+      "newPerStage": 2,
+      "reviewPerStage": 2,
+      "sessionStages": 5,
+      "stageIntervalMinutes": 5,
+      "intervalMinutes": 720,
+      "passThreshold": 60
+    },
+    {
+      "name": "متوازن",
+      "newPerStage": 3,
+      "reviewPerStage": 2,
+      "sessionStages": 6,
+      "stageIntervalMinutes": 3,
+      "intervalMinutes": 300,
+      "passThreshold": 70
+    },
+    {
+      "name": "متقدم",
+      "newPerStage": 4,
+      "reviewPerStage": 2,
+      "sessionStages": 7,
+      "stageIntervalMinutes": 2,
+      "intervalMinutes": 210,
+      "passThreshold": 70
+    },
+    {
+      "name": "إتقان",
+      "newPerStage": 5,
+      "reviewPerStage": 2,
+      "sessionStages": 8,
+      "stageIntervalMinutes": 1,
+      "intervalMinutes": 150,
+      "passThreshold": 75
+    }
+  ]
 }
 ```
 
-- `newPerStage` و`reviewPerStage`: عدد الأسئلة الجديدة وأسئلة المراجعة في كل مرحلة.
-  لا يوجد تصعيد تلقائي مخفي؛ هذه القيم تُطبَّق على كل المراحل وتُضبط من لوحة المدير.
-- `stageSize` يُحسب تلقائيًا كمجموع `newPerStage + reviewPerStage`.
-- إذا كانت نتيجة المرحلة أقل من `passThreshold`، تستخدم المرحلة التالية
-  `failedNewPerStage` و`failedReviewPerStage`، ثم تعود القيم العادية بعد النجاح.
+- `adaptiveEnabled`: الخطة الافتراضية الآن خطة إتقان متدرج واحدة لكل الطلاب.
+  عند `false` تعود القيم اليدوية القديمة (`newPerStage` و`reviewPerStage`
+  و`sessionStages` و`intervalMinutes` و`stageIntervalMinutes`) للعمل كما كانت.
+- `adaptiveInitialLevel`: مستوى البداية للطلاب الجدد (0 = تأسيس، 2 = متوازن افتراضيًا).
+- `adaptiveLevels`: خمسة مستويات يتحكم المدير في أعدادها وفواصلها وحد النجاح فيها.
+  حجم المرحلة = `newPerStage + reviewPerStage`.
+- بعد كل مرحلة: نتيجة 90% أو أكثر تزيد سؤالًا جديدًا وتقلل مراجعة مع تقصير الفاصل،
+  و75–89% تحافظ على المزيج، و60–74% تزيد المراجعة، وأقل من 60% تعيد سؤالًا
+  جديدًا إلى المراجعة وتطيل الفاصل. لا يزيد عدد الجديد عن حدود المستوى.
+- بعد كل جلسة: جلستان متتاليتان بنتيجة 85% أو أكثر، مع ألا تقل أي مرحلة عن
+  `adaptiveMinStageScore` ودقة المراجعة عن `adaptiveMinReviewAccuracy`، ترفع
+  المستوى درجة واحدة. نتيجة الجلسة أقل من `adaptiveDownThreshold` أو مرحلة أقل من
+  `adaptiveCriticalStageScore` تخفض المستوى درجة واحدة. لا يتغير المستوى أكثر من
+  درجة في الجلسة الواحدة.
+- الأسئلة المقالية والقصيرة لا تُستخدم وحدها في قرار الترقية؛ يعتمد القرار على
+  الأسئلة المصححة آليًا، ثم يكمل الطالب تقييمه الذاتي قبل فتح المرحلة التالية.
+- `adaptiveDailyQuestionCap`: سقف اختياري لعدد الأسئلة في اليوم لكل مادة،
+  والافتراضي 80. القيمة `0` تعني بلا سقف. عند الوصول إلى السقف تُغلق المراحل حتى
+  منتصف الليل المحلي، وتُقصَّر المرحلة الأخيرة إذا بقي من السقف أقل من حجمها.
 - إذا لم تتوفر أسئلة مراجعة مستحقة، يكمل التطبيق العدد من الأسئلة الجديدة حسب
-  حدود المادة.
-- `sessionStages`: عدد المراحل في الجلسة قبل الفاصل.
-- `intervalMinutes`: الفاصل بين الجلسات، ويُستخدم أيضًا كأساس لجدولة عودة السؤال
-  الصحيح للمراجعة (120 = ساعتان). الأسئلة الخاطئة تعود بعد
-  `wrongIntervalMinutes`، والأسئلة المتقنة تتضاعف مدة مراجعتها تدريجيًا.
-- `stageIntervalMinutes`: فاصل اختياري بين مرحلتين داخل الجلسة. القيمة `0` تعني
-  فتح المرحلة التالية مباشرة بعد تأكيد الاطلاع على الإجابات النموذجية. عند تفعيله
-  يبدأ العدّاد من لحظة التأكيد، لا من لحظة التسليم.
+  حدود المادة، إلا في مرحلة مراجعة فقط عند وجود مراجعات متاحة.
+- `sessionStages` و`intervalMinutes` و`stageIntervalMinutes` في أعلى المستند تبقى
+  للتوافق مع الوضع اليدوي وللبيانات القديمة.
+- `intervalMinutes` يُستخدم أيضًا كأساس لجدولة عودة السؤال الصحيح للمراجعة
+  (120 = ساعتان). الأسئلة الخاطئة تعود بعد `wrongIntervalMinutes`، والأسئلة
+  المتقنة تتضاعف مدة مراجعتها تدريجيًا.
+- `stageIntervalMinutes`: فاصل اختياري بين مرحلتين داخل الجلسة في الوضع اليدوي.
+  القيمة `0` تعني فتح المرحلة التالية مباشرة بعد تأكيد الاطلاع على الإجابات
+  النموذجية. في الخطة التكيفية يأتي الفاصل من المستوى الحالي ويتغير بعد كل مرحلة.
 - تغيير اسم مستخدم المدير يحرّك وثيقة `usernames/{username}` ويحفظ البريد الأصلي
   في الحقل `email`؛ تسجيل الدخول يقرأ هذا الحقل قبل المصادقة. لا يُستدعى
   `updateEmail` لأن Firebase يطلب التحقق من البريد الجديد، والعناوين الداخلية
@@ -585,7 +656,9 @@ await signInWithEmailAndPassword(auth, email, password);
 
 - البريد `username@students.bakaloriarace.app` صناعي. لا تستخدم «نسيت كلمة المرور» بالبريد في MVP.
 - لإعادة تعيين كلمة المرور: أضف لاحقًا دالة إدارية أو رمز استعادة.
-- `getLeaderboard` يعتمد على `autoFirstCorrect` للأسئلة المصححة آليًا فقط، لأن أسئلة المقال والتقصير ذاتية.
+- `getLeaderboard` يرتب بنسبة الإتقان أولًا، ثم `autoFirstCorrect` للأسئلة
+  المصححة آليًا فقط، لأن أسئلة المقال والتقصير ذاتية. لا يُرتّب حسب حجم الأسئلة أو
+  عدد المراحل.
 - الواجهة العربية PWA مبنية في `app/` وتُخرج إلى `docs/` للنشر على GitHub Pages.
 - Firebase هو الـ backend الوحيد في هذا المشروع.
 

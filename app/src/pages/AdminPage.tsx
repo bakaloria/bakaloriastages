@@ -61,6 +61,7 @@ import {
   applyStudentPalette,
   BACKGROUND_PRESETS,
   contrastRatio,
+  DEFAULT_ADAPTIVE_LEVELS,
   DEFAULT_GLOBAL_SETTINGS,
   DEFAULT_SUBJECT_SETTINGS,
   fetchGlobalSettings,
@@ -74,6 +75,7 @@ import {
   type StudentPalette,
 } from "../lib/settings";
 import type {
+  AdaptiveLevel,
   AdminAuditEntry,
   AdminUserRow,
   Announcement,
@@ -186,6 +188,8 @@ const SUBJECT_PRESETS: Array<{
       stageIntervalMinutes: 0,
       wrongIntervalMinutes: 10,
       masteryThreshold: 1,
+      adaptiveEnabled: true,
+      adaptiveInitialLevel: 2,
     },
   },
   {
@@ -203,6 +207,8 @@ const SUBJECT_PRESETS: Array<{
       stageIntervalMinutes: 20,
       wrongIntervalMinutes: 5,
       masteryThreshold: 1,
+      adaptiveEnabled: true,
+      adaptiveInitialLevel: 1,
     },
   },
   {
@@ -220,6 +226,8 @@ const SUBJECT_PRESETS: Array<{
       stageIntervalMinutes: 0,
       wrongIntervalMinutes: 15,
       masteryThreshold: 0.9,
+      adaptiveEnabled: true,
+      adaptiveInitialLevel: 3,
     },
   },
 ];
@@ -526,7 +534,11 @@ export function AdminPage() {
       await logAdminAction(
         profile,
         "settings.subject",
-        `${selectedSubject?.name ?? subjectId}: ${saved.newPerStage} جديد + ${saved.reviewPerStage} مراجعة، فاصل المراحل ${saved.stageIntervalMinutes} د`,
+        `${selectedSubject?.name ?? subjectId}: ${
+          saved.adaptiveEnabled
+            ? `خطة تكيفية تبدأ من المستوى ${saved.adaptiveInitialLevel + 1}`
+            : `${saved.newPerStage} جديد + ${saved.reviewPerStage} مراجعة`
+        }، فاصل المراحل ${saved.stageIntervalMinutes} د`,
       );
       showNotice("تم حفظ إعدادات المادة.");
     } catch (caught) {
@@ -538,6 +550,30 @@ export function AdminPage() {
 
   function patchSubject<K extends keyof SubjectSettings>(key: K, value: SubjectSettings[K]) {
     setSubjectSettings((previous) => normalizeSubjectSettings({ ...previous, [key]: value }));
+  }
+
+  function patchAdaptiveLevel(
+    index: number,
+    key: keyof AdaptiveLevel,
+    value: string | number,
+  ) {
+    setSubjectSettings((previous) =>
+      normalizeSubjectSettings({
+        ...previous,
+        adaptiveLevels: previous.adaptiveLevels.map((level, levelIndex) =>
+          levelIndex === index ? { ...level, [key]: value } : level,
+        ),
+      }),
+    );
+  }
+
+  function resetAdaptiveLevels() {
+    setSubjectSettings((previous) =>
+      normalizeSubjectSettings({
+        ...previous,
+        adaptiveLevels: DEFAULT_ADAPTIVE_LEVELS,
+      }),
+    );
   }
 
   function applyPalette(palette: StudentPalette) {
@@ -1964,6 +2000,319 @@ export function AdminPage() {
                     />
                     <small>100% تعني إتقان كل أسئلة المادة قبل سجل الإتمام.</small>
                   </label>
+                </div>
+
+                <div className="admin-adaptive-plan">
+                  <div className="admin-adaptive-plan__head">
+                    <div>
+                      <span className="eyebrow"><SparklesIcon /> خطة الإتقان المتدرج</span>
+                      <h3>خطة واحدة تتكيف مع كل طالب</h3>
+                      <p>
+                        عند التفعيل تُستخدم المستويات الخمسة أدناه بدل القيم اليدوية
+                        للمرحلة والجلسة. يتغير مزيج الأسئلة بعد كل مرحلة، ويتغير
+                        الحجم والفاصل بعد كل جلسة.
+                      </p>
+                    </div>
+                    <label className="admin-switch admin-switch--compact">
+                      <input
+                        type="checkbox"
+                        checked={subjectSettings.adaptiveEnabled}
+                        onChange={(event) =>
+                          patchSubject("adaptiveEnabled", event.target.checked)
+                        }
+                      />
+                      <span className="admin-switch__track" />
+                      <span>
+                        <strong>تفعيل الخطة التكيفية</strong>
+                        <small>موصى به لجميع المواد.</small>
+                      </span>
+                    </label>
+                  </div>
+
+                  {subjectSettings.adaptiveEnabled ? (
+                    <>
+                      <div className="admin-field-grid">
+                        <label className="field">
+                          <span>المستوى الابتدائي</span>
+                          <select
+                            className="input"
+                            value={subjectSettings.adaptiveInitialLevel}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveInitialLevel",
+                                Number(event.target.value),
+                              )
+                            }
+                          >
+                            {subjectSettings.adaptiveLevels.map((level, index) => (
+                              <option value={index} key={`${level.name}-${index}`}>
+                                {formatNumber(index + 1)} — {level.name}
+                              </option>
+                            ))}
+                          </select>
+                          <small>يُطبّق على الطلاب الجدد فقط.</small>
+                        </label>
+                        <label className="field">
+                          <span>حد الترقية في الجلسة (%)</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={subjectSettings.adaptiveUpThreshold}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveUpThreshold",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>حد التراجع في الجلسة (%)</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={subjectSettings.adaptiveDownThreshold}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveDownThreshold",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>جلسات متتالية للترقية</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={1}
+                            max={3}
+                            value={subjectSettings.adaptiveStrongSessions}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveStrongSessions",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>أدنى نتيجة مرحلة للترقية (%)</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={subjectSettings.adaptiveMinStageScore}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveMinStageScore",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>أدنى دقة مراجعة للترقية (%)</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={subjectSettings.adaptiveMinReviewAccuracy}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveMinReviewAccuracy",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                        </label>
+                        <label className="field">
+                          <span>حد المرحلة الحرجة (%)</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={100}
+                            value={subjectSettings.adaptiveCriticalStageScore}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveCriticalStageScore",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                          <small>النزول تحته يؤدي إلى مراجعة أكثر في المرحلة التالية.</small>
+                        </label>
+                        <label className="field">
+                          <span>السقف اليومي للأسئلة</span>
+                          <input
+                            className="input"
+                            type="number"
+                            min={0}
+                            max={500}
+                            value={subjectSettings.adaptiveDailyQuestionCap}
+                            onChange={(event) =>
+                              patchSubject(
+                                "adaptiveDailyQuestionCap",
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                          <small>0 = بلا سقف. يُغلق فتح المراحل حتى منتصف الليل عند الوصول.</small>
+                        </label>
+                      </div>
+
+                      <details className="admin-adaptive-levels" open>
+                        <summary>مستويات الخطة الخمسة</summary>
+                        <div className="admin-adaptive-levels__table">
+                          {subjectSettings.adaptiveLevels.map((level, index) => (
+                            <div className="admin-adaptive-level" key={`level-${index}`}>
+                              <div className="admin-adaptive-level__head">
+                                <strong>المستوى {formatNumber(index + 1)}</strong>
+                                <input
+                                  className="input"
+                                  value={level.name}
+                                  maxLength={24}
+                                  onChange={(event) =>
+                                    patchAdaptiveLevel(index, "name", event.target.value)
+                                  }
+                                />
+                              </div>
+                              <div className="admin-adaptive-level__fields">
+                                <label>
+                                  <span>جديد</span>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={0}
+                                    max={8}
+                                    value={level.newPerStage}
+                                    onChange={(event) =>
+                                      patchAdaptiveLevel(
+                                        index,
+                                        "newPerStage",
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>مراجعة</span>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={0}
+                                    max={8}
+                                    value={level.reviewPerStage}
+                                    onChange={(event) =>
+                                      patchAdaptiveLevel(
+                                        index,
+                                        "reviewPerStage",
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>مراحل الجلسة</span>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={3}
+                                    max={12}
+                                    value={level.sessionStages}
+                                    onChange={(event) =>
+                                      patchAdaptiveLevel(
+                                        index,
+                                        "sessionStages",
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>فاصل المرحلة (د)</span>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={0}
+                                    max={60}
+                                    value={level.stageIntervalMinutes}
+                                    onChange={(event) =>
+                                      patchAdaptiveLevel(
+                                        index,
+                                        "stageIntervalMinutes",
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>فاصل الجلسة (د)</span>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={30}
+                                    max={10080}
+                                    value={level.intervalMinutes}
+                                    onChange={(event) =>
+                                      patchAdaptiveLevel(
+                                        index,
+                                        "intervalMinutes",
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <label>
+                                  <span>حد النجاح (%)</span>
+                                  <input
+                                    className="input"
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={level.passThreshold}
+                                    onChange={(event) =>
+                                      patchAdaptiveLevel(
+                                        index,
+                                        "passThreshold",
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="admin-adaptive-levels__actions">
+                          <span className="muted small">
+                            حجم المرحلة = جديد + مراجعة. التعديلات تسري من الجلسة
+                            التالية.
+                          </span>
+                          <button
+                            className="button button--ghost button--sm"
+                            type="button"
+                            onClick={resetAdaptiveLevels}
+                          >
+                            <RefreshIcon />
+                            استعادة المستويات الافتراضية
+                          </button>
+                        </div>
+                      </details>
+                    </>
+                  ) : (
+                    <p className="muted small">
+                      الخطة التكيفية متوقفة؛ تُستخدم القيم اليدوية للأعداد والفواصل
+                      أعلاه.
+                    </p>
+                  )}
                 </div>
 
                 <div className="admin-toggle-row">

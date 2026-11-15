@@ -22,6 +22,9 @@ export interface Profile {
   branch: Branch;
   role: "student" | "admin";
   mustChangePassword?: boolean;
+  disabled?: boolean;
+  deleted?: boolean;
+  disabledReason?: string;
 }
 
 export interface Subject {
@@ -344,6 +347,11 @@ export interface AdminUserRow {
   branch: Branch;
   role: "student" | "admin";
   createdAt?: unknown;
+  disabled: boolean;
+  deleted: boolean;
+  disabledAt?: unknown;
+  deletedAt?: unknown;
+  disabledReason?: string;
 }
 
 export interface AdminAuditEntry {

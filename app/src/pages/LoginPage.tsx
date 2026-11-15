@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Navigate } from "react-router-dom";
+import { AccountBlocked } from "../components/AccountBlocked";
 import { BrandMark } from "../components/Layout";
 import { FullScreenLoader } from "../components/Loading";
 import {
@@ -28,6 +29,15 @@ export function LoginPage() {
   if (loading) return <FullScreenLoader label="نفتح لك مراحل البكالوريا..." />;
   if (user && !profile && registering) {
     return <FullScreenLoader label="نجهّز حسابك..." />;
+  }
+  if (user && profile && (profile.deleted || profile.disabled)) {
+    return (
+      <AccountBlocked
+        variant={profile.deleted ? "deleted" : "disabled"}
+        reason={profile.disabledReason}
+        onLogout={logout}
+      />
+    );
   }
   if (user && profile) return <Navigate to="/" replace />;
   if (user && !profile) {

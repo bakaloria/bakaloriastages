@@ -59,15 +59,36 @@ function profileFromData(uid: string, data: Record<string, unknown>): Profile {
     branch,
     role,
     mustChangePassword: data.mustChangePassword === true,
+    disabled: false,
+    deleted: false,
   };
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileBase, setProfileBase] = useState<Profile | null>(null);
+  const [accountStatus, setAccountStatus] = useState({
+    disabled: false,
+    deleted: false,
+    disabledReason: "",
+  });
   const [settings, setSettings] = useState<GlobalSettings>(DEFAULT_GLOBAL_SETTINGS);
   const [loading, setLoading] = useState(Boolean(auth));
+  const [accountStatusReady, setAccountStatusReady] = useState(!auth);
   const [registering, setRegistering] = useState(false);
+
+  const profile = useMemo<Profile | null>(
+    () =>
+      profileBase
+        ? {
+            ...profileBase,
+            disabled: accountStatus.disabled,
+            deleted: accountStatus.deleted,
+            disabledReason: accountStatus.disabledReason,
+          }
+        : null,
+    [profileBase, accountStatus],
+  );
 
   useEffect(() => {
     if (!auth) {
@@ -77,9 +98,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser);
       if (!nextUser) {
-        setProfile(null);
+        setProfileBase(null);
+        setAccountStatus({ disabled: false, deleted: false, disabledReason: "" });
+        setAccountStatusReady(true);
         setLoading(false);
       } else {
+        setAccountStatusReady(false);
         setLoading(true);
       }
     });
@@ -87,16 +111,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!user || !db) {
-      setProfile(null);
+      setProfileBase(null);
       return;
     }
     const unsubscribe = onSnapshot(
       doc(db, "users", user.uid),
       (snapshot) => {
         if (snapshot.exists()) {
-          setProfile(profileFromData(user.uid, snapshot.data()));
+          setProfileBase(profileFromData(user.uid, snapshot.data()));
         } else {
-          setProfile(null);
+          setProfileBase(null);
         }
         setLoading(false);
       },
@@ -108,6 +132,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
     );
     return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (!user || !db) {
+      setAccountStatus({ disabled: false, deleted: false, disabledReason: "" });
+      setAccountStatusReady(true);
+      return;
+    }
+    setAccountStatusReady(false);
+    return onSnapshot(
+      doc(db, "account_status", user.uid),
+      (snapshot) => {
+        const data = snapshot.exists() ? snapshot.data() : {};
+        const status = String(data.status ?? "");
+        setAccountStatus({
+          disabled: status === "disabled",
+          deleted: status === "deleted",
+          disabledReason: String(data.reason ?? "").trim(),
+        });
+        setAccountStatusReady(true);
+      },
+      () => {
+        setAccountStatus({ disabled: false, deleted: false, disabledReason: "" });
+        setAccountStatusReady(true);
+      },
+    );
   }, [user]);
 
   useEffect(() => {
@@ -172,7 +222,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // flash the "incomplete profile" screen while Firestore delivers the
       // first snapshot of the new user document.
       const username = input.username.trim();
-      setProfile({
+      setProfileBase({
         uid: result.uid,
         username,
         usernameLower: username.toLowerCase(),
@@ -195,14 +245,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user,
       profile,
       settings,
-      loading,
+      loading: loading || (Boolean(user) && Boolean(profile) && !accountStatusReady),
       registering,
       configured: isFirebaseConfigured,
       login,
       register,
       logout,
     }),
-    [user, profile, settings, loading, registering, login, register, logout],
+    [
+      user,
+      profile,
+      settings,
+      loading,
+      accountStatusReady,
+      registering,
+      login,
+      register,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

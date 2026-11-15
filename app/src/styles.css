@@ -5389,11 +5389,18 @@ svg {
 
 .admin-student-filters {
   margin-bottom: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.admin-security-note {
+  margin: -2px 0 16px;
+  max-width: 760px;
+  line-height: 1.8;
 }
 
 .admin-student-actions {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .admin-student-detail {

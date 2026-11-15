@@ -1,5 +1,6 @@
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { AccountBlocked } from "./AccountBlocked";
 import { Layout } from "./Layout";
 import { FullScreenLoader } from "./Loading";
 
@@ -23,5 +24,23 @@ export function ProtectedLayout() {
   if (loading) return <FullScreenLoader label="نفتح لك مراحل البكالوريا..." />;
   if (!user) return <Navigate to="/login" replace />;
   if (!profile) return <ProfileIssue onLogout={logout} />;
+  if (profile.deleted) {
+    return (
+      <AccountBlocked
+        variant="deleted"
+        reason={profile.disabledReason}
+        onLogout={logout}
+      />
+    );
+  }
+  if (profile.disabled) {
+    return (
+      <AccountBlocked
+        variant="disabled"
+        reason={profile.disabledReason}
+        onLogout={logout}
+      />
+    );
+  }
   return <Layout />;
 }

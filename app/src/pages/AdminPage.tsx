@@ -120,6 +120,7 @@ interface AnnouncementDraft {
 
 type StudentBranchFilter = "all" | Branch;
 type StudentRoleFilter = "all" | "student" | "admin";
+type StudentStatusFilter = "active" | "disabled" | "deleted" | "all";
 type StudentSort = "newest" | "name" | "role";
 type AnnouncementStatusFilter = "all" | "live" | "scheduled" | "draft" | "expired";
 type PreviewDevice = "desktop" | "mobile";
@@ -301,6 +302,28 @@ function roleBadge(role: "student" | "admin"): string {
   return role === "admin" ? "badge badge--gold" : "badge badge--soft";
 }
 
+type StudentStatus = "active" | "disabled" | "deleted";
+
+function studentStatus(student: Pick<AdminUserRow, "disabled" | "deleted">): StudentStatus {
+  if (student.deleted) return "deleted";
+  if (student.disabled) return "disabled";
+  return "active";
+}
+
+function studentStatusLabel(student: Pick<AdminUserRow, "disabled" | "deleted">): string {
+  const status = studentStatus(student);
+  if (status === "deleted") return "محذوف";
+  if (status === "disabled") return "معطّل";
+  return "نشط";
+}
+
+function studentStatusBadge(student: Pick<AdminUserRow, "disabled" | "deleted">): string {
+  const status = studentStatus(student);
+  if (status === "deleted") return "badge badge--red";
+  if (status === "disabled") return "badge badge--gold";
+  return "badge badge--green";
+}
+
 export function AdminPage() {
   const { profile } = useAuth();
   const [tab, setTab] = useState<Tab>("overview");
@@ -330,6 +353,8 @@ export function AdminPage() {
   const [studentBranchFilter, setStudentBranchFilter] =
     useState<StudentBranchFilter>("all");
   const [studentRoleFilter, setStudentRoleFilter] = useState<StudentRoleFilter>("all");
+  const [studentStatusFilter, setStudentStatusFilter] =
+    useState<StudentStatusFilter>("active");
   const [studentSort, setStudentSort] = useState<StudentSort>("newest");
   const [studentDetail, setStudentDetail] = useState<AdminUserRow | null>(null);
   const [studentDetailRows, setStudentDetailRows] = useState<StudentEnrollmentRow[]>([]);
@@ -361,6 +386,9 @@ export function AdminPage() {
       if (studentRoleFilter !== "all" && student.role !== studentRoleFilter) {
         return false;
       }
+      if (studentStatusFilter !== "all" && studentStatus(student) !== studentStatusFilter) {
+        return false;
+      }
       if (
         needle &&
         !student.username.toLowerCase().includes(needle) &&
@@ -378,7 +406,14 @@ export function AdminPage() {
       }
       return (toMillis(b.createdAt) ?? 0) - (toMillis(a.createdAt) ?? 0);
     });
-  }, [students, studentSearch, studentBranchFilter, studentRoleFilter, studentSort]);
+  }, [
+    students,
+    studentSearch,
+    studentBranchFilter,
+    studentRoleFilter,
+    studentStatusFilter,
+    studentSort,
+  ]);
 
   const filteredAnnouncements = useMemo(() => {
     if (announcementFilter === "all") return announcements;
@@ -391,12 +426,14 @@ export function AdminPage() {
     if (!db) return;
     if (!options?.silent) setLoading(true);
     try {
-      const [subjectSnap, global, announcementRows, userSnap] = await Promise.all([
-        getDocs(query(collection(db, "subjects"), orderBy("sort", "asc"))),
-        fetchGlobalSettings(),
-        fetchAllAnnouncements(),
-        getDocs(query(collection(db, "users"), limit(300))),
-      ]);
+      const [subjectSnap, global, announcementRows, userSnap, statusSnap] =
+        await Promise.all([
+          getDocs(query(collection(db, "subjects"), orderBy("sort", "asc"))),
+          fetchGlobalSettings(),
+          fetchAllAnnouncements(),
+          getDocs(query(collection(db, "users"), limit(300))),
+          getDocs(query(collection(db, "account_status"), limit(500))),
+        ]);
 
       setSubjects(
         subjectSnap.docs.map((item) => ({
@@ -406,10 +443,15 @@ export function AdminPage() {
       );
       setGlobalSettings(global);
       setAnnouncements(announcementRows);
+      const statusByUid = new Map(
+        statusSnap.docs.map((item) => [item.id, item.data()] as const),
+      );
       setStudents(
         userSnap.docs
           .map((item) => {
             const data = item.data();
+            const status = statusByUid.get(item.id);
+            const access = String(status?.status ?? "");
             return {
               uid: item.id,
               username: String(data.username ?? ""),
@@ -417,6 +459,11 @@ export function AdminPage() {
               branch: data.branch === "literary" ? "literary" : "scientific",
               role: data.role === "admin" ? "admin" : "student",
               createdAt: data.createdAt,
+              disabled: access === "disabled",
+              deleted: access === "deleted",
+              disabledAt: access !== "" ? status?.updatedAt : undefined,
+              deletedAt: access === "deleted" ? status?.updatedAt : undefined,
+              disabledReason: String(status?.reason ?? "").trim(),
             } as AdminUserRow;
           })
           .sort((a, b) => (toMillis(b.createdAt) ?? 0) - (toMillis(a.createdAt) ?? 0)),
@@ -745,6 +792,10 @@ export function AdminPage() {
       setError("لا يمكنك تغيير صلاحية حسابك الحالي من هنا.");
       return;
     }
+    if (student.disabled || student.deleted) {
+      setError("فعّل الحساب أو استعده أولًا قبل تغيير صلاحيته.");
+      return;
+    }
     const nextRole = student.role === "admin" ? "student" : "admin";
     if (
       !window.confirm(
@@ -764,6 +815,97 @@ export function AdminPage() {
         rows.map((row) => (row.uid === student.uid ? { ...row, role: nextRole } : row)),
       );
       showNotice(nextRole === "admin" ? "تم منح صلاحية المشرف." : "تم سحب صلاحية المشرف.");
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateStudentStatus(
+    student: AdminUserRow,
+    nextStatus: StudentStatus,
+  ) {
+    if (!profile || !db) return;
+    if (student.uid === profile.uid) {
+      setError("لا يمكنك تعطيل أو حذف حسابك الحالي من هنا.");
+      return;
+    }
+    if (student.role === "admin") {
+      setError("اسحب صلاحية الإشراف من الحساب أولًا، ثم يمكنك تعطيله أو حذفه.");
+      return;
+    }
+    if (studentStatus(student) === nextStatus) return;
+
+    const confirmText =
+      nextStatus === "deleted"
+        ? `حذف حساب «${student.displayName}» من التطبيق؟ سيُمنع من الدخول ويُخفى من القائمة، ويمكن استعادته لاحقًا من فلتر «المحذوفون».`
+        : nextStatus === "disabled"
+          ? `تعطيل حساب «${student.displayName}»؟ لن يستطيع الدخول إلى التطبيق حتى تعيد تفعيله.`
+          : studentStatus(student) === "deleted"
+            ? `استعادة حساب «${student.displayName}» وإعادة السماح له بالدخول؟`
+            : `إعادة تفعيل حساب «${student.displayName}»؟`;
+    if (!window.confirm(confirmText)) return;
+
+    setSaving(true);
+    setError("");
+    try {
+      const disabled = nextStatus !== "active";
+      const deleted = nextStatus === "deleted";
+      await setDoc(
+        doc(db, "account_status", student.uid),
+        {
+          status: nextStatus,
+          reason:
+            nextStatus === "disabled"
+              ? "أوقف المشرف الحساب مؤقتًا."
+              : nextStatus === "deleted"
+                ? "حذف المشرف الحساب من التطبيق."
+                : "",
+          updatedAt: serverTimestamp(),
+          updatedBy: profile.uid,
+        },
+        { merge: true },
+      );
+      const previousStatus = studentStatus(student);
+      await logAdminAction(
+        profile,
+        nextStatus === "deleted"
+          ? "user.delete"
+          : nextStatus === "disabled"
+            ? "user.disable"
+            : previousStatus === "deleted"
+              ? "user.restore"
+              : "user.enable",
+        student.username,
+      );
+      const now = Date.now();
+      const reason =
+        nextStatus === "disabled"
+          ? "أوقف المشرف الحساب مؤقتًا."
+          : nextStatus === "deleted"
+            ? "حذف المشرف الحساب من التطبيق."
+            : "";
+      const updated = {
+        disabled,
+        deleted,
+        disabledAt: disabled ? now : undefined,
+        deletedAt: deleted ? now : undefined,
+        disabledReason: reason,
+      };
+      setStudents((rows) =>
+        rows.map((row) => (row.uid === student.uid ? { ...row, ...updated } : row)),
+      );
+      setStudentDetail((current) =>
+        current && current.uid === student.uid ? { ...current, ...updated } : current,
+      );
+      showNotice(
+        nextStatus === "deleted"
+          ? "تم حذف الحساب من التطبيق."
+          : nextStatus === "disabled"
+            ? "تم تعطيل الحساب."
+            : "تم تفعيل الحساب من جديد.",
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -810,13 +952,21 @@ export function AdminPage() {
   }
 
   function exportStudentsCsv() {
-    const header = ["الاسم", "اسم المستخدم", "الفرع", "الصلاحية", "تاريخ التسجيل"];
+    const header = [
+      "الاسم",
+      "اسم المستخدم",
+      "الفرع",
+      "الصلاحية",
+      "الحالة",
+      "تاريخ التسجيل",
+    ];
     const lines = filteredStudents.map((student) =>
       [
         student.displayName,
         student.username,
         branchName(student.branch),
         student.role === "admin" ? "مشرف" : "طالب",
+        studentStatusLabel(student),
         formatDateTime(student.createdAt),
       ].map(csvCell),
     );
@@ -2877,6 +3027,11 @@ export function AdminPage() {
                 </button>
               </div>
             </div>
+            <p className="muted small admin-security-note">
+              كلمات المرور محفوظة مشفّرة في Firebase ولا يمكن عرضها حتى للمشرف. يمكنك
+              تعطيل الحساب أو حذفه من التطبيق، أو مطالبة الطالب بتغيير كلمة مروره من صفحة
+              حسابه. تظهر الحسابات المعطّلة والمحذوفة عبر فلتر الحالة.
+            </p>
             <div className="admin-field-grid admin-student-filters">
               <label className="field">
                 <span>الفرع</span>
@@ -2907,6 +3062,21 @@ export function AdminPage() {
                 </select>
               </label>
               <label className="field">
+                <span>الحالة</span>
+                <select
+                  className="input"
+                  value={studentStatusFilter}
+                  onChange={(event) =>
+                    setStudentStatusFilter(event.target.value as StudentStatusFilter)
+                  }
+                >
+                  <option value="active">النشطون</option>
+                  <option value="disabled">المعطّلون</option>
+                  <option value="deleted">المحذوفون</option>
+                  <option value="all">الكل</option>
+                </select>
+              </label>
+              <label className="field">
                 <span>الترتيب</span>
                 <select
                   className="input"
@@ -2927,6 +3097,7 @@ export function AdminPage() {
                     <th>اسم المستخدم</th>
                     <th>الفرع</th>
                     <th>الصلاحية</th>
+                    <th>الحالة</th>
                     <th>تاريخ التسجيل</th>
                     <th />
                   </tr>
@@ -2947,6 +3118,11 @@ export function AdminPage() {
                           {student.role === "admin" ? "مشرف" : "طالب"}
                         </span>
                       </td>
+                      <td>
+                        <span className={studentStatusBadge(student)}>
+                          {studentStatusLabel(student)}
+                        </span>
+                      </td>
                       <td>{formatDateTime(student.createdAt)}</td>
                       <td>
                         <div className="button-row admin-student-actions">
@@ -2964,10 +3140,58 @@ export function AdminPage() {
                           >
                             نسخ الاسم
                           </button>
+                          {student.deleted ? (
+                            <button
+                              className="button button--ghost button--sm"
+                              type="button"
+                              disabled={saving || student.role === "admin"}
+                              onClick={() => void updateStudentStatus(student, "active")}
+                            >
+                              استعادة
+                            </button>
+                          ) : (
+                            <>
+                              <button
+                                className="button button--ghost button--sm"
+                                type="button"
+                                disabled={
+                                  saving ||
+                                  student.uid === profile.uid ||
+                                  student.role === "admin"
+                                }
+                                onClick={() =>
+                                  void updateStudentStatus(
+                                    student,
+                                    student.disabled ? "active" : "disabled",
+                                  )
+                                }
+                              >
+                                {student.disabled ? "تفعيل" : "تعطيل"}
+                              </button>
+                              <button
+                                className="button button--danger-ghost button--sm"
+                                type="button"
+                                disabled={
+                                  saving ||
+                                  student.uid === profile.uid ||
+                                  student.role === "admin"
+                                }
+                                onClick={() => void updateStudentStatus(student, "deleted")}
+                              >
+                                <TrashIcon />
+                                حذف
+                              </button>
+                            </>
+                          )}
                           <button
                             className="button button--ghost button--sm"
                             type="button"
-                            disabled={saving || student.uid === profile.uid}
+                            disabled={
+                              saving ||
+                              student.uid === profile.uid ||
+                              student.disabled ||
+                              student.deleted
+                            }
                             onClick={() => void toggleRole(student)}
                           >
                             {student.role === "admin" ? "سحب الإشراف" : "تعيين مشرفًا"}
@@ -2991,7 +3215,10 @@ export function AdminPage() {
                     <h3>{studentDetail.displayName}</h3>
                     <p className="muted small">
                       @{studentDetail.username} • {branchName(studentDetail.branch)} •{" "}
-                      {studentDetail.role === "admin" ? "مشرف" : "طالب"}
+                      {studentDetail.role === "admin" ? "مشرف" : "طالب"} •{" "}
+                      <span className={studentStatusBadge(studentDetail)}>
+                        {studentStatusLabel(studentDetail)}
+                      </span>
                     </p>
                   </div>
                   <button
@@ -3112,8 +3339,8 @@ export function AdminPage() {
                 </label>
               </div>
               <div className="alert alert--warning">
-                كلمة المرور الافتراضية للحساب الأول هي <strong>admin123</strong> (Firebase
-                يفرض 6 أحرف على الأقل). غيّرها الآن إلى كلمة قوية خاصة بك.
+                لا تُعرض كلمات المرور في التطبيق. إذا كانت هذه أول مرة، استخدم كلمة المرور
+                المؤقتة التي استلمتها من مسؤول النظام، ثم اختر الآن كلمة مرور قوية خاصة بك.
               </div>
               <button
                 className="button button--primary button--lg"

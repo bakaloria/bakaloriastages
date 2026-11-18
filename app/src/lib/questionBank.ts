@@ -45,6 +45,47 @@ const TYPE_VALUES = new Set(QUESTION_TYPE_OPTIONS.map((item) => item.value));
 const AUTO_TYPES = new Set<QuestionType>(["mcq", "true_false", "fill_blank", "matching", "ordering"]);
 const GRADING_VALUES = new Set<Grading>(["auto", "self", "manual"]);
 
+// Imported banks often place the correct choice first. Shuffle deterministically
+// on import so the correct answer is not predictable while keeping the order
+// stable if the same bank is imported again.
+function shuffleImportedOptions(question: BankQuestion): BankQuestion {
+  if (question.type !== "mcq" || !Array.isArray(question.options)) return question;
+  const options = question.options.map((option) => String(option ?? ""));
+  if (options.length < 2) return question;
+
+  const correct =
+    question.correct && typeof question.correct === "object" && !Array.isArray(question.correct)
+      ? (question.correct as Record<string, unknown>)
+      : null;
+  const correctIndex = Number(correct?.index);
+  if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
+    return question;
+  }
+
+  let seed = 2166136261;
+  for (let index = 0; index < question.id.length; index += 1) {
+    seed ^= question.id.charCodeAt(index);
+    seed = Math.imul(seed, 16777619);
+  }
+  seed >>>= 0;
+
+  const order = options.map((_, index) => index);
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    const swapWith = seed % (index + 1);
+    [order[index], order[swapWith]] = [order[swapWith], order[index]];
+  }
+
+  const shuffled = order.map((index) => options[index]);
+  const newIndex = order.indexOf(correctIndex);
+  return {
+    ...question,
+    options: shuffled,
+    correct: { ...(correct ?? {}), index: newIndex },
+    modelAnswer: shuffled[newIndex],
+  };
+}
+
 export interface BankSubjectMeta {
   id: string;
   name: string;
@@ -771,14 +812,15 @@ export async function importQuestionBank(
   options: { updateEnrollments?: boolean } = {},
 ): Promise<ImportSummary> {
   if (!db) throw new Error("FIREBASE_NOT_CONFIGURED");
-  const starts = await nextOrderIndexes(parsed.questions);
+  const questions = parsed.questions.map(shuffleImportedOptions);
+  const starts = await nextOrderIndexes(questions);
   const usedOrders = new Map<string, Set<number>>();
-  for (const question of parsed.questions) {
+  for (const question of questions) {
     const used = usedOrders.get(question.subjectId) ?? new Set<number>();
     if (question.orderIndex !== undefined) used.add(question.orderIndex);
     usedOrders.set(question.subjectId, used);
   }
-  for (const question of parsed.questions) {
+  for (const question of questions) {
     if (question.orderIndex !== undefined) continue;
     const used = usedOrders.get(question.subjectId) ?? new Set<number>();
     let next = starts.get(question.subjectId) ?? 0;
@@ -832,7 +874,7 @@ export async function importQuestionBank(
   });
 
   let processed = 0;
-  for (const question of parsed.questions) {
+  for (const question of questions) {
     if (!db) throw new Error("FIREBASE_NOT_CONFIGURED");
     operations.push({
       ref: doc(db, "questions", question.id),
@@ -869,7 +911,7 @@ export async function importQuestionBank(
       });
     }
     processed += 1;
-    onProgress?.(processed, parsed.questions.length);
+    onProgress?.(processed, questions.length);
   }
 
   await commitWrites(operations);
@@ -884,7 +926,7 @@ export async function importQuestionBank(
       title: unit.title,
     });
   }
-  for (const question of parsed.questions) {
+  for (const question of questions) {
     affectedSubjects.add(question.subjectId);
     const key = `${question.subjectId}_${question.unitId}`;
     if (!affectedUnits.has(key)) {
@@ -944,7 +986,7 @@ export async function importQuestionBank(
   }
 
   return {
-    questions: parsed.questions.length,
+    questions: questions.length,
     units: parsed.units.length,
     lessons: parsed.lessons.length,
     subjects: parsed.subjects.length,

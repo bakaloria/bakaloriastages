@@ -1224,7 +1224,8 @@ export function QuestionBankPanel({
               </h3>
               <p className="muted small">
                 سيتم تحديث إجماليات المادة والوحدات، وسيُحدّث عدد أسئلة الطلاب الحاليين
-                غير المكتملين. المصدر: {pending.kind === "json" ? "ملف JSON" : "الصيغة السريعة"}.
+                غير المكتملين. تُخلط خيارات الاختيار من متعدد تلقائيًا عند الحفظ. المصدر:{" "}
+                {pending.kind === "json" ? "ملف JSON" : "الصيغة السريعة"}.
               </p>
               {pending.parsed.warnings.length > 0 ? (
                 <ul className="admin-warning-list">
